@@ -24,7 +24,24 @@ extern "C" fn kernel_main() -> ! {
         write_volatile((UART + 0x30) as *mut u32, 0x101); // UART + transmit.
     }
     serial_write(b"Ferrovisor\r\n");
+    serial_write(b"CurrentEL: EL");
+    serial_write(&[b'0' + current_el(), b'\r', b'\n']);
     halt()
+}
+
+fn current_el() -> u8 {
+    let value: u64;
+    // SAFETY: QEMU boots this kernel at EL1 or EL2, where CurrentEL is
+    // readable. MRS only reads the register; it does not change the EL.
+    unsafe {
+        asm!(
+            "mrs {value}, CurrentEL",
+            value = out(reg) value,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    // CurrentEL encodes the exception level in bits [3:2].
+    ((value >> 2) & 0b11) as u8
 }
 
 fn serial_write(bytes: &[u8]) {

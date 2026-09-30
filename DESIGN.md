@@ -147,7 +147,7 @@ AI 関連のソフトウェアを Linux VM に置く構想は残す。ただし�
 
 最初の対象は **AArch64 + QEMU `virt` + TCG** とする。CPU は `cortex-a57`、1 CPU、RAM 128 MiB とし、QEMU が ELF を直接ロードする。初期起動に UEFI や外部ブートローダーは使用しない。
 
-ホストの仮想化支援機能に依存せずに開発できる TCG を使う。`virtualization=on` で EL2 を利用可能にし、将来のハイパーバイザー実装につなげる。ただし、今回のシリアル出力だけでは EL2 やゲスト実行の検証完了とはしない。対象の仕様は [QEMU virt の公式文書](https://www.qemu.org/docs/master/system/arm/virt.html) を参照する。
+ホストの仮想化支援機能に依存せずに開発できる TCG を使う。`virtualization=on` で EL2 を利用可能にし、将来のハイパーバイザー実装につなげる。`CurrentEL` の読み取りで EL2 での起動を確認済み。ゲスト実行は未実装である。対象の仕様は [QEMU virt の公式文書](https://www.qemu.org/docs/master/system/arm/virt.html) を参照する。
 
 Rust のターゲットは `aarch64-unknown-none-softfloat` とする。実行手順と確認済みの環境は [README.md](README.md) に記録する。実機への移植とゲスト Linux の選定は後続段階で行う。
 
@@ -209,4 +209,4 @@ crate 名は必要に応じて `ferrovisor-kernel`、`ferrovisor-abi`、`ferrovi
 
 最初のステップでは、AArch64 の ELF、スタックと BSS の初期化、PL011 による `Ferrovisor` の出力、待機までを実装する。M1 全体のうち、例外処理や意図的な異常の検証はまだ含めない。
 
-このステップのレビュー後、次は起動時の例外レベルを読み出し、EL2 であることを確認する小さな変更を候補とする。その後に例外ベクタと例外ログへ進む。
+続くステップで起動時の `CurrentEL` の読み取りと表示を追加し、標準設定で EL2、仮想化を無効にした比較実行で EL1 を確認した。この変更のレビュー後、例外ベクタと例外ログへ小さなステップに分けて進む。

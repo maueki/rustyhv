@@ -6,8 +6,8 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 
 ## 最初の一歩: AArch64 でシリアル出力
 
-現在の実装は、QEMU `virt` の単一 CPU で起動し、`Ferrovisor` と出力して待機するところまで。
-EL2 を利用可能にした構成だが、VM の実行、例外ハンドラ、MMU、割込み、ヒープは未実装。
+現在の実装は、QEMU `virt` の単一 CPU で起動し、起動メッセージと現在の例外レベルを出力して待機するところまで。
+`CurrentEL` レジスタを読み取って EL2 での起動を確認する。VM の実行、例外ハンドラ、MMU、割込み、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
 ### 準備
@@ -30,10 +30,11 @@ cargo run
 ```
 
 QEMU が ELF を直接ロードするため、UEFI や外部ブートローダーは不要。
-TCG を使うため KVM は不要。表示される出力は次の一行。
+TCG を使うため KVM は不要。標準設定での出力は次の二行。
 
 ```text
 Ferrovisor
+CurrentEL: EL2
 ```
 
 出力後は待機し、`Ctrl+C` で QEMU を終了する。
@@ -43,7 +44,7 @@ Ferrovisor
 
 確認済み環境: Rust / Cargo 1.94.1、QEMU 11.1.1。
 
-次のコマンドで `Ferrovisor` の出力を確認した。
+次のコマンドで起動メッセージと `CurrentEL: EL2` の出力を確認する。
 
 ```sh
 CARGO_TARGET_DIR=target timeout 5s cargo run --offline
@@ -56,7 +57,7 @@ CARGO_TARGET_DIR=target timeout 5s cargo run --offline
 
 1. `linker.ld`: メモリ上の配置と 64 KiB のスタック。
 2. `src/boot.S`: スタック設定、BSS のゼロ初期化、Rust への移行。
-3. `src/main.rs`: PL011 UART の初期化、文字出力、待機。
+3. `src/main.rs`: PL011 UART の初期化、`CurrentEL` の読み取り、文字出力、待機。
 4. `.cargo/config.toml`: ビルド対象と QEMU の起動条件。
 
 ### 参照
