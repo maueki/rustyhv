@@ -41,7 +41,16 @@ Ferrovisor
 `CARGO_TARGET_DIR` が書き込み不可の場所を指す環境では、
 `CARGO_TARGET_DIR=target cargo run` で出力先を指定する。
 
-ビルド確認: Rust / Cargo 1.94.1。QEMU での起動はインストール待ちで未確認。
+確認済み環境: Rust / Cargo 1.94.1、QEMU 11.1.1。
+
+次のコマンドで `Ferrovisor` の出力を確認した。
+
+```sh
+CARGO_TARGET_DIR=target timeout 5s cargo run --offline
+```
+
+カーネルは出力後に待機するため、この確認では5秒後に QEMU が終了し、
+`timeout` の終了コードは `124` となる。文字出力の成功と合わせて確認する。
 
 ### レビューの順序
 

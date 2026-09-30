@@ -8,7 +8,7 @@
 - PL011 UART へ `Ferrovisor` と出力して待機する処理を追加。
 - 起動手順とレビュー箇所を `README.md` に記載し、`DESIGN.md` を更新。
 - ビルド、AArch64 ELF の入口・配置、`cargo fmt --check`、Clippy を確認。
-- QEMU での起動確認は、QEMU のインストール待ち。
+- QEMU 11.1.1 の `virt` + TCG で `Ferrovisor` のシリアル出力を確認。出力後、検証用の5秒タイムアウトで終了。
 
 ## 2026-09-30 — 開発方針
 
