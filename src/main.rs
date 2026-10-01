@@ -56,8 +56,35 @@ extern "C" fn kernel_main() -> ! {
 
 #[unsafe(no_mangle)]
 extern "C" fn exception_handler() -> ! {
+    let esr: u64;
+    let elr: u64;
+    // SAFETY: This handler is entered through the EL2 vector table.
+    // Read the exception registers before printing; neither MRS changes them.
+    unsafe {
+        asm!(
+            "mrs {esr}, ESR_EL2",
+            "mrs {elr}, ELR_EL2",
+            esr = out(reg) esr,
+            elr = out(reg) elr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
     serial_write(b"EXCEPTION\r\n");
+    serial_write(b"ESR_EL2: ");
+    serial_hex(esr);
+    serial_write(b"\r\nELR_EL2: ");
+    serial_hex(elr);
+    serial_write(b"\r\n");
     halt()
+}
+
+fn serial_hex(value: u64) {
+    let mut bytes = *b"0x0000000000000000";
+    for (index, byte) in bytes[2..].iter_mut().enumerate() {
+        let digit = ((value >> ((15 - index) * 4)) & 0xf) as usize;
+        *byte = b"0123456789abcdef"[digit];
+    }
+    serial_write(&bytes);
 }
 
 fn current_el() -> u8 {

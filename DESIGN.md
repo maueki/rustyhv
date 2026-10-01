@@ -211,4 +211,6 @@ crate 名は必要に応じて `ferrovisor-kernel`、`ferrovisor-abi`、`ferrovi
 
 続くステップで起動時の `CurrentEL` の読み取りと表示を追加し、標準設定で EL2、仮想化を無効にした比較実行で EL1 を確認した。
 
-EL2 の例外ベクタと、`EXCEPTION` と表示して待機するハンドラを追加した。`exception-test` feature の `brk #0` で到達を検証する。この変更のレビュー後、例外の原因と発生位置を表示する小さな変更を候補とする。
+EL2 の例外ベクタと、`EXCEPTION` と表示して待機するハンドラを追加した。`exception-test` feature の `brk #0` で到達を検証する。
+
+続くステップで `ESR_EL2` と `ELR_EL2` の16進数表示を追加した。BRK の原因情報と、その命令のアドレスを確認済み。次の実装範囲は、この変更のレビュー後に決める。
