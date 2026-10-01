@@ -55,7 +55,7 @@ extern "C" fn kernel_main() -> ! {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn exception_handler() -> ! {
+extern "C" fn exception_handler(vector: u64) -> ! {
     let esr: u64;
     let elr: u64;
     // SAFETY: This handler is entered through the EL2 vector table.
@@ -70,9 +70,23 @@ extern "C" fn exception_handler() -> ! {
         );
     }
     serial_write(b"EXCEPTION\r\n");
-    serial_write(b"ESR_EL2: ");
-    serial_hex(esr);
-    serial_write(b"\r\nELR_EL2: ");
+    serial_write(b"Vector offset: ");
+    serial_hex(vector * 128);
+    serial_write(b"\r\nKind: ");
+    // Each group contains synchronous, IRQ, FIQ, and SError entries.
+    serial_write(match vector & 3 {
+        0 => b"Synchronous\r\n",
+        1 => b"IRQ\r\n",
+        2 => b"FIQ\r\n",
+        _ => b"SError\r\n",
+    });
+    if vector & 3 == 0 {
+        // ESR describes synchronous exceptions, not IRQ or FIQ.
+        serial_write(b"ESR_EL2: ");
+        serial_hex(esr);
+        serial_write(b"\r\n");
+    }
+    serial_write(b"ELR_EL2: ");
     serial_hex(elr);
     serial_write(b"\r\n");
     halt()
