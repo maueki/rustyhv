@@ -7,7 +7,8 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 ## 最初の一歩: AArch64 でシリアル出力
 
 現在の実装は、QEMU `virt` の単一 CPU で起動し、起動メッセージと現在の例外レベルを出力して待機するところまで。
-`CurrentEL` レジスタを読み取って EL2 での起動を確認する。VM の実行、例外ハンドラ、MMU、割込み、ヒープは未実装。
+`CurrentEL` レジスタを読み取り、EL2 なら例外ベクタを設置する。例外時は `EXCEPTION` と出力して待機する。
+VM の実行、例外からの復帰、MMU、割込みの有効化、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
 ### 準備
@@ -59,6 +60,20 @@ CARGO_TARGET_DIR=target timeout 5s cargo run --offline
 2. `src/boot.S`: スタック設定、BSS のゼロ初期化、Rust への移行。
 3. `src/main.rs`: PL011 UART の初期化、`CurrentEL` の読み取り、文字出力、待機。
 4. `.cargo/config.toml`: ビルド対象と QEMU の起動条件。
+
+### 例外ハンドラの確認
+
+```sh
+cargo run --features exception-test
+```
+
+EL2 の例外ベクタを設定後、`brk #0` で同期例外を発生させる。
+起動メッセージに続いて `EXCEPTION` が表示され、そのまま待機する。
+通常の `cargo run` は意図的な例外を発生させない。
+
+`src/vectors.S` に 2048 バイト境界のベクタ表を置き、16 個の入口を共通ハンドラへ接続する。
+ハンドラはスタックを初期位置へ戻し、割り込まれた処理へ復帰しない。
+EL1 での起動時は EL2 用の設定と例外テストをスキップする。
 
 ### 参照
 

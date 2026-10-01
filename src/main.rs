@@ -6,6 +6,11 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 global_asm!(include_str!("boot.S"));
+global_asm!(include_str!("vectors.S"));
+
+unsafe extern "C" {
+    static exception_vectors: u8;
+}
 
 const UART: usize = 0x0900_0000;
 const UART_DR: *mut u32 = UART as *mut u32;
@@ -26,6 +31,32 @@ extern "C" fn kernel_main() -> ! {
     serial_write(b"Ferrovisor\r\n");
     serial_write(b"CurrentEL: EL");
     serial_write(&[b'0' + current_el(), b'\r', b'\n']);
+    if current_el() == 2 {
+        // SAFETY: At EL2, VBAR_EL2 is writable. The assembly table is
+        // 2048-byte aligned; ISB makes it effective before the test trap.
+        unsafe {
+            asm!(
+                "adr {table}, {vectors}",
+                "msr VBAR_EL2, {table}",
+                "isb",
+                table = out(reg) _,
+                vectors = sym exception_vectors,
+                options(nostack, preserves_flags),
+            );
+        }
+        #[cfg(feature = "exception-test")]
+        // SAFETY: The EL2 vector table and stack are ready. This deliberate
+        // synchronous exception enters our handler, which never returns.
+        unsafe {
+            asm!("brk #0", options(noreturn));
+        }
+    }
+    halt()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn exception_handler() -> ! {
+    serial_write(b"EXCEPTION\r\n");
     halt()
 }
 
