@@ -234,7 +234,45 @@ extern "C" fn exception_handler(vector: u64) -> ! {
     serial_write(b"ELR_EL2: ");
     serial_hex(elr);
     serial_write(b"\r\n");
+    if vector & 3 == 1 {
+        finish_irq();
+    }
     halt()
+}
+
+fn finish_irq() {
+    // QEMU virt 固有: GICv2 CPU interface の配置。
+    const GICC: usize = 0x0801_0000;
+    // IAR / EOIR のオフセットと INTID の下位10ビットは GICv2 の仕様。
+    // SAFETY: EL2 の IRQ ハンドラーから、DAIF をマスクした状態で呼ぶ。
+    // GIC は初期化済み。IAR を一度読むと割込みを受領して active 状態にする。
+    let acknowledge = unsafe { read_volatile((GICC + 0x00c) as *const u32) };
+    let intid = acknowledge & 0x3ff;
+    serial_write(b"IRQ INTID: ");
+    serial_hex(u64::from(intid));
+    serial_write(b"\r\n");
+    // 1020以上は特殊な応答で、通常の割込みとして完了通知しない。
+    if intid >= 1020 {
+        serial_write(b"No IRQ to complete\r\n");
+        return;
+    }
+    if intid == 26 {
+        // QEMU virt の EL2 物理タイマー。完了通知前に割込み要求を止める。
+        // SAFETY: EL2 のタイマーを無効化・マスクし、変更を同期する。
+        unsafe {
+            asm!("msr CNTHP_CTL_EL2, {masked}", "isb", masked = in(reg) 2u64,
+                options(nostack, preserves_flags));
+        }
+        serial_write(b"Timer stopped\r\n");
+    }
+    // SAFETY: GICC_CTLR=1 により EOImode=0。EOIR で優先度を戻し active 状態を解除する。
+    // デバイス側の停止を完了してから、IAR の応答全体をそのまま返す。
+    unsafe {
+        asm!("dsb sy", options(nostack, preserves_flags));
+        write_volatile((GICC + 0x010) as *mut u32, acknowledge);
+        asm!("dsb sy", options(nostack, preserves_flags));
+    }
+    serial_write(b"IRQ completed\r\n");
 }
 
 fn serial_hex(value: u64) {

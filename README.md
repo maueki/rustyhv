@@ -137,10 +137,16 @@ EXCEPTION
 Vector offset: 0x0000000000000280
 Kind: IRQ
 ELR_EL2: ...
+IRQ INTID: 0x000000000000001a
+Timer stopped
+IRQ completed
 ```
 
 `0x280` は現在の EL で SP_ELx を使っているときの IRQ 入口。
-既存ハンドラーで割込みをマスクして停止する。割込み番号の取得、GIC への完了通知、
+ハンドラーで割込みをマスクし、GIC の `GICC_IAR` から割込み番号を取得する。
+`0x1a` は EL2 物理タイマーの PPI 26。タイマーを停止して要求を取り下げ、
+`GICC_EOIR` に IAR の応答を返して完了通知した後に停止する。
+特殊な番号1020〜1023には完了通知しない。
 タイマーの再設定、元の処理への復帰はまだ行わない。
 `exception-test` も指定した場合は BRK テストを優先し、タイマー IRQ テストをスキップする。
 通常の `cargo run` では IRQ のマスクを維持する。
