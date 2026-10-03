@@ -6,6 +6,7 @@ publish = false
 
 [features]
 exception-test = []
+timer-irq-test = []
 
 [profile.dev]
 panic = "abort"

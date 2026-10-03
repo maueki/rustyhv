@@ -8,7 +8,8 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 
 現在の実装は、QEMU `virt` の単一 CPU で起動し、起動メッセージと現在の例外レベルを出力して待機するところまで。
 `CurrentEL` レジスタを読み取り、EL2 なら例外ベクタを設置する。例外時は `EXCEPTION` と出力して待機する。
-VM の実行、例外からの復帰、MMU、割込みの有効化、ヒープは未実装。
+`timer-irq-test` feature でタイマー IRQ の受信も確認できる。
+VM の実行、例外からの復帰、MMU、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
 ### 準備
@@ -55,7 +56,7 @@ EL2 起動時は `CNTHP_CVAL_EL2` に100 ms後のカウンタ値を設定し、
 期限到達後にタイマーを無効化し、`Timer deadline reached` と表示する。
 `100 ms wait ticks` は実際に待ったカウント数で、実行ごとに少し変わる。
 経過時間は「カウント数 ÷ 周波数」で求める。
-これは CPU を使い続ける待機で、タイマー割込みやタスクの sleep は未実装。
+これは CPU を使い続ける待機。タイマー IRQ の受信確認は別の feature で行い、タスクの sleep は未実装。
 EL1 起動時はこの待機をスキップする。
 
 QEMU は `gic-version=2` で GICv2 に固定する。
@@ -114,11 +115,35 @@ ELR_EL2: 0x0000000040081b1c
 `Vector offset` はベクタ表の先頭から入口までの距離。
 `0x200` は現在の EL で SP_ELx を使っているときの同期例外に対応する。
 各入口が番号を `x0` で Rust ハンドラへ渡し、`Kind` に Synchronous / IRQ / FIQ / SError を表示する。
-QEMU で発生させて確認したのは同期例外。IRQ・FIQ・SError の発生試験は後続段階で行う。
+QEMU で同期例外とタイマー IRQ を確認済み。FIQ・SError の発生試験は後続段階で行う。
 
 `src/vectors.S` に 2048 バイト境界のベクタ表を置き、16 個の入口を共通ハンドラへ接続する。
 ハンドラはスタックを初期位置へ戻し、割り込まれた処理へ復帰しない。
 EL1 での起動時は EL2 用の設定と例外テストをスキップする。
+
+### タイマー IRQ の受信確認
+
+```sh
+cargo run --features timer-irq-test
+```
+
+通常の初期化後、`HCR_EL2.IMO` を設定して物理 IRQ を EL2 へ送る。
+EL2 物理タイマーに100 ms後の期限を設定し、タイマーの `IMASK` と CPU の `DAIF.I` を解除する。
+これらの操作は AArch64 の機能で、GIC の配置とタイマーの配線は現在の QEMU `virt` 設定に依存する。
+
+```text
+Waiting for timer IRQ (100 ms)
+EXCEPTION
+Vector offset: 0x0000000000000280
+Kind: IRQ
+ELR_EL2: ...
+```
+
+`0x280` は現在の EL で SP_ELx を使っているときの IRQ 入口。
+既存ハンドラーで割込みをマスクして停止する。割込み番号の取得、GIC への完了通知、
+タイマーの再設定、元の処理への復帰はまだ行わない。
+`exception-test` も指定した場合は BRK テストを優先し、タイマー IRQ テストをスキップする。
+通常の `cargo run` では IRQ のマスクを維持する。
 
 ### 参照
 

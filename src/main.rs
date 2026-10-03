@@ -73,6 +73,8 @@ extern "C" fn kernel_main() -> ! {
         unsafe {
             asm!("brk #0", options(noreturn));
         }
+        #[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
+        test_timer_irq(frequency);
     }
     halt()
 }
@@ -119,13 +121,42 @@ fn configure_timer_irq() {
         write_volatile(GICD as *mut u32, 1);
         asm!("dsb sy", "isb", options(nostack, preserves_flags));
 
-        // 設定を読み戻す。割込みの受信試験は次のステップで行う。
+        // 設定を読み戻す。ここでは CPU とタイマーの割込みマスクを維持する。
         assert!(read_volatile((GICD + 0x100) as *const u32) & TIMER_BIT != 0);
         assert!(read_volatile((GICD + 0x400 + TIMER_IRQ) as *const u8) == 0x80);
         assert!(read_volatile((GICC + 0x004) as *const u32) == 0xf0);
         assert!(read_volatile(GICC as *const u32) & 1 != 0);
         assert!(read_volatile(GICD as *const u32) & 1 != 0);
     }
+}
+
+#[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
+fn test_timer_irq(frequency: u64) -> ! {
+    assert!(frequency > 0);
+    serial_write(b"Waiting for timer IRQ (100 ms)\r\n");
+    let deadline = physical_counter().wrapping_add(frequency.div_ceil(10));
+    // SAFETY: EL2 のベクタ、スタック、GIC の設定後に呼ぶ。
+    // HCR_EL2.IMO（ビット4）は AArch64 の仕様で、物理 IRQ を EL2 へ送る。
+    // 他の HCR ビットを維持し、タイマーの IMASK と DAIF.I だけを解除する。
+    // ハンドラーは割込みをマスクして停止するため、元の処理へは復帰しない。
+    unsafe {
+        asm!(
+            "mrs {hcr}, HCR_EL2",
+            "orr {hcr}, {hcr}, #0x10",
+            "msr HCR_EL2, {hcr}",
+            "isb",
+            "msr CNTHP_CVAL_EL2, {deadline}",
+            "msr CNTHP_CTL_EL2, {enabled}",
+            "isb",
+            "msr daifclr, #0x2",
+            hcr = out(reg) _,
+            deadline = in(reg) deadline,
+            enabled = in(reg) 1u64, // ENABLE=1、IMASK=0。
+            options(nostack, preserves_flags),
+        );
+    }
+    // IRQ はポーリングせず、既存の例外ハンドラーで受ける。
+    halt()
 }
 
 fn wait_100ms(frequency: u64) -> u64 {
