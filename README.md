@@ -32,7 +32,7 @@ cargo run
 ```
 
 QEMU が ELF を直接ロードするため、UEFI や外部ブートローダーは不要。
-TCG を使うため KVM は不要。標準設定の出力例は次の八行。
+TCG を使うため KVM は不要。標準設定の出力例は次の六行。
 
 ```text
 Ferrovisor
@@ -40,8 +40,6 @@ CurrentEL: EL2
 Timer frequency (Hz): 0x0000000003b9aca0
 GIC version: 0x0000000000000002
 GIC INTID limit: 0x0000000000000120
-100 ms wait ticks: 0x00000000005f5e13
-Timer deadline reached
 Timer IRQ configured (masked)
 ```
 
@@ -50,20 +48,11 @@ Timer IRQ configured (masked)
 `CNTFRQ_EL0` が保持するシステムカウンタの周波数を Hz 単位の16進数で表示する。
 上の値は 62,500,000 Hz（62.5 MHz）。CPU の動作周波数とは別で、
 カウンタの差分を時間に換算するときに使う。周波数の値は実行環境に依存する。
-EL2 起動時は `CNTHP_CVAL_EL2` に100 ms後のカウンタ値を設定し、
-`CNTHP_CTL_EL2` の `ISTATUS` が1になるまでポーリングする。
-`ENABLE=1` でタイマーを動かし、`IMASK=1` で割込み通知はマスクする。
-期限到達後にタイマーを無効化し、`Timer deadline reached` と表示する。
-`100 ms wait ticks` は実際に待ったカウント数で、実行ごとに少し変わる。
-経過時間は「カウント数 ÷ 周波数」で求める。
-これは CPU を使い続ける待機。タイマー IRQ の受信確認は別の feature で行い、タスクの sleep は未実装。
-EL1 起動時はこの待機をスキップする。
-
 QEMU は `gic-version=2` で GICv2 に固定する。
 Distributor の `GICD_PIDR2` でバージョンを、`GICD_TYPER` で割込み番号の範囲を確認する。
 `INTID limit` は上限を含まない値で、`0x120` は番号0〜287の範囲を示す。
 範囲内のすべての番号にデバイスが接続されているという意味ではない。
-100 ms待機の後、EL2 物理タイマーの PPI 26 を GIC で有効化し、
+EL2 起動時はタイマーを停止・マスクし、物理タイマーの PPI 26 を GIC で有効化し、
 優先度を `0x80`、CPU interface の優先度マスクを `0xf0` に設定する。
 Distributor と CPU interface の配信を有効にし、設定を読み戻して確認する。
 タイマーは停止済みで IMASK=1、CPU の IRQ もマスク済みなので、割込みはまだ受信しない。

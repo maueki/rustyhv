@@ -64,10 +64,6 @@ extern "C" fn kernel_main() -> ! {
                 options(nostack, preserves_flags),
             );
         }
-        let elapsed = wait_100ms(frequency);
-        serial_write(b"100 ms wait ticks: ");
-        serial_hex(elapsed);
-        serial_write(b"\r\nTimer deadline reached\r\n");
         configure_timer_irq();
         serial_write(b"Timer IRQ configured (masked)\r\n");
         #[cfg(feature = "exception-test")]
@@ -109,10 +105,12 @@ fn configure_timer_irq() {
     const TIMER_IRQ: usize = 26;
     const TIMER_BIT: u32 = 1 << TIMER_IRQ;
     // SAFETY: 単一CPU、MMU無効、GICv2 の起動設定として呼ぶ。
-    // CPU の DAIF とタイマーの IMASK はマスク済み。タイマーは停止済み。
+    // CPU の DAIF はマスク済み。GIC 設定前にタイマーを停止・マスクする。
     // 以下のレジスタオフセットと制御ビットは GICv2 の仕様。
     // 優先度0x80と優先度マスク0xf0は、Ferrovisor の今回の設定値。
     unsafe {
+        asm!("msr CNTHP_CTL_EL2, {masked}", "isb", masked = in(reg) 2u64,
+            options(nostack, preserves_flags));
         write_volatile(GICD as *mut u32, 0); // Distributor の配信を停止。
         write_volatile(GICC as *mut u32, 0); // CPU interface の配信を停止。
         write_volatile((GICD + 0x180) as *mut u32, TIMER_BIT); // PPI 26 を無効化。
@@ -165,46 +163,6 @@ fn test_timer_irq(frequency: u64) {
     // SAFETY: 一度の受信試験を終え、CPU の IRQ を再びマスクする。
     unsafe { asm!("msr daifset, #0x2", options(nostack, preserves_flags)) };
     serial_write(b"Returned from timer IRQ\r\n");
-}
-
-fn wait_100ms(frequency: u64) -> u64 {
-    // EL2 から呼ぶ。100 ms後の物理カウンタ値をタイマーの期限にする。
-    // 100 msは確認用に選んだ時間。周波数は固定せず CNTFRQ_EL0 から取得する。
-    assert!(frequency > 0);
-    let start = physical_counter();
-    let deadline = start.wrapping_add(frequency.div_ceil(10));
-    // SAFETY: EL2 で CNTHP レジスタへアクセスする。割込みはマスクしたまま、
-    // 一度無効化して期限を設定し、有効化する。ISB 後に状態を確認する。
-    unsafe {
-        asm!(
-            "msr CNTHP_CTL_EL2, {masked}",
-            "msr CNTHP_CVAL_EL2, {deadline}",
-            "msr CNTHP_CTL_EL2, {enabled}",
-            "isb",
-            masked = in(reg) 0b010u64, // IMASK=1、ENABLE=0。
-            deadline = in(reg) deadline,
-            enabled = in(reg) 0b011u64, // IMASK=1、ENABLE=1。
-            options(nostack, preserves_flags),
-        );
-    }
-    loop {
-        let control: u64;
-        // SAFETY: EL2 のタイマー制御レジスタを読み、ISTATUS を確認する。
-        unsafe {
-            asm!("mrs {control}, CNTHP_CTL_EL2", control = out(reg) control,
-                options(nomem, nostack, preserves_flags));
-        }
-        if control & (1 << 2) != 0 {
-            break;
-        }
-        core::hint::spin_loop();
-    }
-    // SAFETY: 期限到達後、割込みをマスクしたままタイマーを無効化する。
-    unsafe {
-        asm!("msr CNTHP_CTL_EL2, {masked}", "isb", masked = in(reg) 0b010u64,
-            options(nostack, preserves_flags));
-    }
-    physical_counter().wrapping_sub(start)
 }
 
 #[unsafe(no_mangle)]
@@ -296,6 +254,7 @@ fn serial_hex(value: u64) {
     serial_write(&bytes);
 }
 
+#[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
 fn physical_counter() -> u64 {
     let counter: u64;
     // SAFETY: EL2 の起動処理から呼び、物理カウンタを読み取る。
