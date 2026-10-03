@@ -32,7 +32,8 @@ extern "C" fn kernel_main() -> ! {
     serial_write(b"CurrentEL: EL");
     serial_write(&[b'0' + current_el(), b'\r', b'\n']);
     serial_write(b"Timer frequency (Hz): ");
-    serial_hex(timer_frequency());
+    let frequency = timer_frequency();
+    serial_hex(frequency);
     serial_write(b"\r\n");
     if current_el() == 2 {
         // SAFETY: At EL2, VBAR_EL2 is writable. The assembly table is
@@ -47,6 +48,21 @@ extern "C" fn kernel_main() -> ! {
                 options(nostack, preserves_flags),
             );
         }
+        // 1秒分のカウント数から100 ms分を求め、端数は切り上げる。
+        assert!(frequency > 0);
+        let start = physical_counter();
+        let ticks = frequency.div_ceil(10);
+        let mut elapsed;
+        loop {
+            elapsed = physical_counter().wrapping_sub(start);
+            if elapsed >= ticks {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        serial_write(b"100 ms wait ticks: ");
+        serial_hex(elapsed);
+        serial_write(b"\r\n");
         #[cfg(feature = "exception-test")]
         // SAFETY: The EL2 vector table and stack are ready. This deliberate
         // synchronous exception enters our handler, which never returns.
@@ -102,6 +118,21 @@ fn serial_hex(value: u64) {
         *byte = b"0123456789abcdef"[digit];
     }
     serial_write(&bytes);
+}
+
+fn physical_counter() -> u64 {
+    let counter: u64;
+    // SAFETY: EL2 の起動処理から呼び、物理カウンタを読み取る。
+    // ISB で先行命令の実行を同期してから計測する。設定は変更しない。
+    unsafe {
+        asm!(
+            "isb",
+            "mrs {counter}, CNTPCT_EL0",
+            counter = out(reg) counter,
+            options(nostack, preserves_flags),
+        );
+    }
+    counter
 }
 
 fn timer_frequency() -> u64 {
