@@ -22,4 +22,10 @@ SECTIONS
         . += 64K;
         __stack_top = .;
     }
+    .el1_stack (NOLOAD) : ALIGN(16)
+    {
+        /* EL1 の試験用に別の64 KiBスタックを確保する。容量は今回の選択。 */
+        . += 64K;
+        __el1_stack_top = .;
+    }
 }

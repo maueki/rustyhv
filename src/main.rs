@@ -74,7 +74,47 @@ extern "C" fn kernel_main() -> ! {
         }
         #[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
         test_timer_irq(frequency);
+        #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
+        enter_el1();
     }
+    halt()
+}
+
+#[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
+fn enter_el1() -> ! {
+    unsafe extern "C" {
+        static __el1_stack_top: u8;
+    }
+    serial_write(b"Entering EL1\r\n");
+    // SAFETY: 単一 CPU の EL2 から、別に確保した16バイト境界のスタックで EL1 へ移る。
+    // HCR_EL2 は RW=1（EL1 を AArch64 にする）だけを設定し、Stage 2 や IRQ 転送は無効。
+    // SCTLR_EL1 は RES1 ビットを設定し、MMU・キャッシュを無効にする。
+    // SPSR_EL2=0x3c5 は DAIF 全マスク・EL1h（SP_EL1 使用）。値は AArch64 の仕様。
+    // QEMU の初期化済み UART と物理 RAM 配置を使う。EL1 例外への対応は後続のステップ。
+    unsafe {
+        asm!(
+            "msr daifset, #0xf",
+            "msr HCR_EL2, {hcr}",
+            "msr SCTLR_EL1, {sctlr}",
+            "msr SP_EL1, {stack}",
+            "msr ELR_EL2, {entry}",
+            "msr SPSR_EL2, {state}",
+            "isb",
+            "eret",
+            hcr = in(reg) 1u64 << 31,
+            sctlr = in(reg) 0x30d0_0800u64,
+            stack = in(reg) core::ptr::addr_of!(__el1_stack_top),
+            entry = in(reg) el1_main as *const (),
+            state = in(reg) 0x3c5u64,
+            options(noreturn, nostack),
+        );
+    }
+}
+
+#[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
+extern "C" fn el1_main() -> ! {
+    assert!(current_el() == 1);
+    serial_write(b"CurrentEL: EL1\r\n");
     halt()
 }
 
@@ -286,8 +326,8 @@ fn timer_frequency() -> u64 {
 
 fn current_el() -> u8 {
     let value: u64;
-    // SAFETY: QEMU boots this kernel at EL1 or EL2, where CurrentEL is
-    // readable. MRS only reads the register; it does not change the EL.
+    // SAFETY: EL1 または EL2 のコードから呼び、読み取り可能な CurrentEL を読む。
+    // MRS は現在の EL を変更しない。
     unsafe {
         asm!(
             "mrs {value}, CurrentEL",

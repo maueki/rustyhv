@@ -9,7 +9,8 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 現在の実装は、QEMU `virt` の単一 CPU で起動し、起動メッセージと現在の例外レベルを出力して待機するところまで。
 `CurrentEL` レジスタを読み取り、EL2 なら例外ベクタを設置する。例外時は `EXCEPTION` と出力する。
 `timer-irq-test` feature でタイマー IRQ の受信も確認できる。
-タイマー IRQ からの復帰に対応。VM の実行、EL 移行、MMU、ヒープは未実装。
+タイマー IRQ からの復帰と、`el1-test` feature で EL2 → EL1 の移行に対応。
+VM の実行、MMU、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
 ### 準備
@@ -146,6 +147,27 @@ CPU の IRQ を再びマスクして `Returned from timer IRQ` と出力し待�
 未対応の割込みや特殊な番号では停止する。周期的なタイマーの再設定はまだ行わない。
 `exception-test` も指定した場合は BRK テストを優先し、タイマー IRQ テストをスキップする。
 通常の `cargo run` では IRQ のマスクを維持する。
+
+### EL2 から EL1 への移行確認
+
+```sh
+cargo run --features el1-test
+```
+
+通常の初期化後、EL1 用に確保した別の64 KiBスタックを `SP_EL1` に設定する。
+`HCR_EL2.RW=1` で EL1 を AArch64 とし、`SCTLR_EL1` は MMU・キャッシュを無効にする。
+`ELR_EL2` に EL1 の入口、`SPSR_EL2` に DAIF 全マスク・EL1h を設定し、`eret` で移行する。
+
+```text
+Entering EL1
+CurrentEL: EL1
+```
+
+EL1 で `CurrentEL` を確認して UART に出力し、そのまま待機する。EL2 には戻らない。
+同じ物理メモリを使う最小テストで、Stage 2 による隔離やゲスト VM の実行は未実装。
+EL1 の例外ベクタはまだ設置しない。EL1 の例外処理と EL2 呼び出しは後続のステップ。
+`timer-irq-test` と同時に指定すると IRQ の受信・復帰後に EL1 へ移行する。
+`exception-test` も指定した場合は BRK テストを優先し、EL1 へ移行しない。
 
 ### 参照
 
