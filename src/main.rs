@@ -51,7 +51,7 @@ extern "C" fn kernel_main() -> ! {
         let elapsed = wait_100ms(frequency);
         serial_write(b"100 ms wait ticks: ");
         serial_hex(elapsed);
-        serial_write(b"\r\n");
+        serial_write(b"\r\nTimer deadline reached\r\n");
         #[cfg(feature = "exception-test")]
         // SAFETY: The EL2 vector table and stack are ready. This deliberate
         // synchronous exception enters our handler, which never returns.
@@ -70,17 +70,42 @@ extern "C" fn kernel_main() -> ! {
 }
 
 fn wait_100ms(frequency: u64) -> u64 {
-    // EL2 から呼ぶ。1秒分のカウント数から100 ms分を求め、端数は切り上げる。
+    // EL2 から呼ぶ。100 ms後の物理カウンタ値をタイマーの期限にする。
     assert!(frequency > 0);
     let start = physical_counter();
-    let ticks = frequency.div_ceil(10);
+    let deadline = start.wrapping_add(frequency.div_ceil(10));
+    // SAFETY: EL2 で CNTHP レジスタへアクセスする。割込みはマスクしたまま、
+    // 一度無効化して期限を設定し、有効化する。ISB 後に状態を確認する。
+    unsafe {
+        asm!(
+            "msr CNTHP_CTL_EL2, {masked}",
+            "msr CNTHP_CVAL_EL2, {deadline}",
+            "msr CNTHP_CTL_EL2, {enabled}",
+            "isb",
+            masked = in(reg) 0b010u64, // IMASK=1、ENABLE=0。
+            deadline = in(reg) deadline,
+            enabled = in(reg) 0b011u64, // IMASK=1、ENABLE=1。
+            options(nostack, preserves_flags),
+        );
+    }
     loop {
-        let elapsed = physical_counter().wrapping_sub(start);
-        if elapsed >= ticks {
-            return elapsed;
+        let control: u64;
+        // SAFETY: EL2 のタイマー制御レジスタを読み、ISTATUS を確認する。
+        unsafe {
+            asm!("mrs {control}, CNTHP_CTL_EL2", control = out(reg) control,
+                options(nomem, nostack, preserves_flags));
+        }
+        if control & (1 << 2) != 0 {
+            break;
         }
         core::hint::spin_loop();
     }
+    // SAFETY: 期限到達後、割込みをマスクしたままタイマーを無効化する。
+    unsafe {
+        asm!("msr CNTHP_CTL_EL2, {masked}", "isb", masked = in(reg) 0b010u64,
+            options(nostack, preserves_flags));
+    }
+    physical_counter().wrapping_sub(start)
 }
 
 #[unsafe(no_mangle)]
