@@ -31,6 +31,9 @@ extern "C" fn kernel_main() -> ! {
     serial_write(b"Ferrovisor\r\n");
     serial_write(b"CurrentEL: EL");
     serial_write(&[b'0' + current_el(), b'\r', b'\n']);
+    serial_write(b"Timer frequency (Hz): ");
+    serial_hex(timer_frequency());
+    serial_write(b"\r\n");
     if current_el() == 2 {
         // SAFETY: At EL2, VBAR_EL2 is writable. The assembly table is
         // 2048-byte aligned; ISB makes it effective before the test trap.
@@ -99,6 +102,20 @@ fn serial_hex(value: u64) {
         *byte = b"0123456789abcdef"[digit];
     }
     serial_write(&bytes);
+}
+
+fn timer_frequency() -> u64 {
+    let frequency: u64;
+    // SAFETY: QEMU の起動環境では EL1/EL2 から CNTFRQ_EL0 を読み取れる。
+    // MRS は周波数の設定値を読むだけで、タイマーの動作を変更しない。
+    unsafe {
+        asm!(
+            "mrs {frequency}, CNTFRQ_EL0",
+            frequency = out(reg) frequency,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    frequency
 }
 
 fn current_el() -> u8 {

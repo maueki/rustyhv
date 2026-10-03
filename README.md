@@ -31,14 +31,20 @@ cargo run
 ```
 
 QEMU が ELF を直接ロードするため、UEFI や外部ブートローダーは不要。
-TCG を使うため KVM は不要。標準設定での出力は次の二行。
+TCG を使うため KVM は不要。確認した環境での標準設定の出力は次の三行。
 
 ```text
 Ferrovisor
 CurrentEL: EL2
+Timer frequency (Hz): 0x0000000003b9aca0
 ```
 
 出力後は待機し、`Ctrl+C` で QEMU を終了する。
+
+`CNTFRQ_EL0` が保持するシステムカウンタの周波数を Hz 単位の16進数で表示する。
+上の値は 62,500,000 Hz（62.5 MHz）。CPU の動作周波数とは別で、
+カウンタの差分を時間に換算するときに使う。周波数の値は実行環境に依存する。
+今回は読み取りまでで、カウンタによる計測やタイマー割込みは未実装。
 
 `CARGO_TARGET_DIR` が書き込み不可の場所を指す環境では、
 `CARGO_TARGET_DIR=target cargo run` で出力先を指定する。
@@ -76,7 +82,7 @@ EXCEPTION
 Vector offset: 0x0000000000000200
 Kind: Synchronous
 ESR_EL2: 0x00000000f2000000
-ELR_EL2: 0x00000000400815e0
+ELR_EL2: 0x0000000040081628
 ```
 
 `ESR_EL2` は同期例外の原因を示すレジスタで、この値は AArch64 の `brk #0` に対応する。
