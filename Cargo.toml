@@ -6,7 +6,6 @@ publish = false
 
 [features]
 exception-test = []
-timer-demo = []
 
 [profile.dev]
 panic = "abort"

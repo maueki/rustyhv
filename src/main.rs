@@ -59,13 +59,6 @@ extern "C" fn kernel_main() -> ! {
             asm!("brk #0", options(noreturn));
         }
     }
-    #[cfg(feature = "timer-demo")]
-    if current_el() == 2 {
-        loop {
-            wait_100ms(frequency);
-            serial_write(b"Tick\r\n");
-        }
-    }
     halt()
 }
 
