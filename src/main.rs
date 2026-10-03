@@ -48,18 +48,7 @@ extern "C" fn kernel_main() -> ! {
                 options(nostack, preserves_flags),
             );
         }
-        // 1秒分のカウント数から100 ms分を求め、端数は切り上げる。
-        assert!(frequency > 0);
-        let start = physical_counter();
-        let ticks = frequency.div_ceil(10);
-        let mut elapsed;
-        loop {
-            elapsed = physical_counter().wrapping_sub(start);
-            if elapsed >= ticks {
-                break;
-            }
-            core::hint::spin_loop();
-        }
+        let elapsed = wait_100ms(frequency);
         serial_write(b"100 ms wait ticks: ");
         serial_hex(elapsed);
         serial_write(b"\r\n");
@@ -70,7 +59,28 @@ extern "C" fn kernel_main() -> ! {
             asm!("brk #0", options(noreturn));
         }
     }
+    #[cfg(feature = "timer-demo")]
+    if current_el() == 2 {
+        loop {
+            wait_100ms(frequency);
+            serial_write(b"Tick\r\n");
+        }
+    }
     halt()
+}
+
+fn wait_100ms(frequency: u64) -> u64 {
+    // EL2 から呼ぶ。1秒分のカウント数から100 ms分を求め、端数は切り上げる。
+    assert!(frequency > 0);
+    let start = physical_counter();
+    let ticks = frequency.div_ceil(10);
+    loop {
+        let elapsed = physical_counter().wrapping_sub(start);
+        if elapsed >= ticks {
+            return elapsed;
+        }
+        core::hint::spin_loop();
+    }
 }
 
 #[unsafe(no_mangle)]
