@@ -59,6 +59,8 @@ extern "C" fn kernel_main() -> ! {
         serial_write(b"100 ms wait ticks: ");
         serial_hex(elapsed);
         serial_write(b"\r\nTimer deadline reached\r\n");
+        configure_timer_irq();
+        serial_write(b"Timer IRQ configured (masked)\r\n");
         #[cfg(feature = "exception-test")]
         // SAFETY: The EL2 vector table and stack are ready. This deliberate
         // synchronous exception enters our handler, which never returns.
@@ -84,6 +86,34 @@ fn gic_info() -> (u64, u64) {
         u64::from((pidr2 >> 4) & 0xf),
         u64::from((typer & 0x1f) + 1) * 32,
     )
+}
+
+fn configure_timer_irq() {
+    const GICD: usize = 0x0800_0000;
+    const GICC: usize = 0x0801_0000;
+    const TIMER_IRQ: usize = 26; // QEMU virt の EL2 物理タイマーは PPI 26。
+    const TIMER_BIT: u32 = 1 << TIMER_IRQ;
+    // SAFETY: 単一CPU、MMU無効、GICv2 の起動設定として呼ぶ。
+    // CPU の DAIF とタイマーの IMASK はマスク済み。タイマーは停止済み。
+    unsafe {
+        write_volatile(GICD as *mut u32, 0); // Distributor の配信を停止。
+        write_volatile(GICC as *mut u32, 0); // CPU interface の配信を停止。
+        write_volatile((GICD + 0x180) as *mut u32, TIMER_BIT); // PPI 26 を無効化。
+        write_volatile((GICD + 0x280) as *mut u32, TIMER_BIT); // 保留状態をクリア。
+        write_volatile((GICD + 0x400 + TIMER_IRQ) as *mut u8, 0x80); // 優先度。
+        write_volatile((GICD + 0x100) as *mut u32, TIMER_BIT); // PPI 26 を有効化。
+        write_volatile((GICC + 0x004) as *mut u32, 0xf0); // この優先度より高い要求を許可。
+        write_volatile(GICC as *mut u32, 1);
+        write_volatile(GICD as *mut u32, 1);
+        asm!("dsb sy", "isb", options(nostack, preserves_flags));
+
+        // 設定を読み戻す。割込みの受信試験は次のステップで行う。
+        assert!(read_volatile((GICD + 0x100) as *const u32) & TIMER_BIT != 0);
+        assert!(read_volatile((GICD + 0x400 + TIMER_IRQ) as *const u8) == 0x80);
+        assert!(read_volatile((GICC + 0x004) as *const u32) == 0xf0);
+        assert!(read_volatile(GICC as *const u32) & 1 != 0);
+        assert!(read_volatile(GICD as *const u32) & 1 != 0);
+    }
 }
 
 fn wait_100ms(frequency: u64) -> u64 {

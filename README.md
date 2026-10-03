@@ -31,7 +31,7 @@ cargo run
 ```
 
 QEMU が ELF を直接ロードするため、UEFI や外部ブートローダーは不要。
-TCG を使うため KVM は不要。標準設定の出力例は次の七行。
+TCG を使うため KVM は不要。標準設定の出力例は次の八行。
 
 ```text
 Ferrovisor
@@ -41,6 +41,7 @@ GIC version: 0x0000000000000002
 GIC INTID limit: 0x0000000000000120
 100 ms wait ticks: 0x00000000005f5e13
 Timer deadline reached
+Timer IRQ configured (masked)
 ```
 
 出力後は待機し、`Ctrl+C` で QEMU を終了する。
@@ -61,7 +62,10 @@ QEMU は `gic-version=2` で GICv2 に固定する。
 Distributor の `GICD_PIDR2` でバージョンを、`GICD_TYPER` で割込み番号の範囲を確認する。
 `INTID limit` は上限を含まない値で、`0x120` は番号0〜287の範囲を示す。
 範囲内のすべての番号にデバイスが接続されているという意味ではない。
-GIC の読み取り専用レジスタを確認する段階で、割込みの配信はまだ有効にしない。
+100 ms待機の後、EL2 物理タイマーの PPI 26 を GIC で有効化し、
+優先度を `0x80`、CPU interface の優先度マスクを `0xf0` に設定する。
+Distributor と CPU interface の配信を有効にし、設定を読み戻して確認する。
+タイマーは停止済みで IMASK=1、CPU の IRQ もマスク済みなので、割込みはまだ受信しない。
 
 `CARGO_TARGET_DIR` が書き込み不可の場所を指す環境では、
 `CARGO_TARGET_DIR=target cargo run` で出力先を指定する。
@@ -99,7 +103,7 @@ EXCEPTION
 Vector offset: 0x0000000000000200
 Kind: Synchronous
 ESR_EL2: 0x00000000f2000000
-ELR_EL2: 0x00000000400818c4
+ELR_EL2: 0x0000000040081b1c
 ```
 
 `ESR_EL2` は同期例外の原因を示すレジスタで、この値は AArch64 の `brk #0` に対応する。
