@@ -1,4 +1,6 @@
 .section .text.vectors, "ax"
+// 2048バイト境界、16個の入口、各128バイトは AArch64 の仕様。
+// QEMU virt 固有の値ではない。
 .balign 2048
 .global exception_vectors
 exception_vectors:

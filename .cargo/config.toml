@@ -2,4 +2,7 @@
 target = "aarch64-unknown-none-softfloat"
 
 [target.aarch64-unknown-none-softfloat]
+# QEMU用の開発設定: virt、EL2有効、GICv2、Cortex-A57、TCG、1 CPU、RAM 128 MiB。
+# これらは今回の選択で、AArch64共通の要件ではない。
+# -kernelにはCargoがELFのパスを渡す。実機では別の起動手順が必要。
 runner = ["qemu-system-aarch64", "-machine", "virt,virtualization=on,gic-version=2", "-cpu", "cortex-a57", "-accel", "tcg", "-smp", "1", "-m", "128M", "-display", "none", "-serial", "stdio", "-monitor", "none", "-nic", "none", "-kernel"]

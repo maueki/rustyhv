@@ -12,21 +12,26 @@ unsafe extern "C" {
     static exception_vectors: u8;
 }
 
+// QEMU virt 固有: UART0 は PL011 で、MMIO の先頭はこのアドレス。
+// 実機へ移植するときは、UART の種類・配置・入力クロックを確認する。
 const UART: usize = 0x0900_0000;
+// 以下のオフセットとビット位置は QEMU 固有ではなく PL011 の仕様。
 const UART_DR: *mut u32 = UART as *mut u32;
 const UART_FR: *const u32 = (UART + 0x18) as *const u32;
 const UART_TX_FULL: u32 = 1 << 5;
 
 #[unsafe(no_mangle)]
 extern "C" fn kernel_main() -> ! {
-    // SAFETY: These are aligned PL011 MMIO registers on QEMU virt, with
-    // the MMU off and a single CPU. No other code accesses the UART.
+    // SAFETY: QEMU virt の PL011 レジスタへ、MMU無効・単一CPUでアクセスする。
+    // アクセス幅に必要な境界に揃っており、他のコードは UART を操作しない。
+    // QEMU virt の入力クロック24 MHzと、今回選んだ115200 baudから除数13と1を求める。
+    // レジスタのオフセットと制御ビットは PL011 の仕様に従う。
     unsafe {
-        write_volatile((UART + 0x30) as *mut u32, 0); // Disable UART.
-        write_volatile((UART + 0x24) as *mut u32, 13); // 24 MHz / 115200 baud.
-        write_volatile((UART + 0x28) as *mut u32, 1);
-        write_volatile((UART + 0x2c) as *mut u32, 0x70); // 8-bit, FIFO enabled.
-        write_volatile((UART + 0x30) as *mut u32, 0x101); // UART + transmit.
+        write_volatile((UART + 0x30) as *mut u32, 0); // UART を無効化。
+        write_volatile((UART + 0x24) as *mut u32, 13); // 整数部の除数。
+        write_volatile((UART + 0x28) as *mut u32, 1); // 小数部の除数。
+        write_volatile((UART + 0x2c) as *mut u32, 0x70); // 8ビット・FIFO有効。
+        write_volatile((UART + 0x30) as *mut u32, 0x101); // UART と送信を有効化。
     }
     serial_write(b"Ferrovisor\r\n");
     serial_write(b"CurrentEL: EL");
@@ -41,6 +46,7 @@ extern "C" fn kernel_main() -> ! {
     serial_write(b"\r\nGIC INTID limit: ");
     serial_hex(intid_limit);
     serial_write(b"\r\n");
+    // 今回の起動設定で GICv2 を選んでいる。AArch64 全体の必須条件ではない。
     assert!(gic_version == 2);
     if current_el() == 2 {
         // SAFETY: At EL2, VBAR_EL2 is writable. The assembly table is
@@ -72,7 +78,9 @@ extern "C" fn kernel_main() -> ! {
 }
 
 fn gic_info() -> (u64, u64) {
+    // QEMU virt 固有: GIC Distributor の MMIO 先頭アドレス。
     const GICD_BASE: usize = 0x0800_0000;
+    // 0xfe8 / 0x004 は GICv2 の PIDR2 / TYPER のオフセット。
     // SAFETY: QEMU virt の GICv2 Distributor の読み取り専用レジスタ。
     // MMU は無効で、アドレスは32ビットアクセスに必要な境界に揃っている。
     let (pidr2, typer) = unsafe {
@@ -89,12 +97,16 @@ fn gic_info() -> (u64, u64) {
 }
 
 fn configure_timer_irq() {
+    // QEMU virt 固有: GICv2 Distributor と CPU interface の MMIO 配置。
     const GICD: usize = 0x0800_0000;
     const GICC: usize = 0x0801_0000;
-    const TIMER_IRQ: usize = 26; // QEMU virt の EL2 物理タイマーは PPI 26。
+    // QEMU virt の配線: EL2 物理タイマーは INTID 26。移植先の配線も確認する。
+    const TIMER_IRQ: usize = 26;
     const TIMER_BIT: u32 = 1 << TIMER_IRQ;
     // SAFETY: 単一CPU、MMU無効、GICv2 の起動設定として呼ぶ。
     // CPU の DAIF とタイマーの IMASK はマスク済み。タイマーは停止済み。
+    // 以下のレジスタオフセットと制御ビットは GICv2 の仕様。
+    // 優先度0x80と優先度マスク0xf0は、Ferrovisor の今回の設定値。
     unsafe {
         write_volatile(GICD as *mut u32, 0); // Distributor の配信を停止。
         write_volatile(GICC as *mut u32, 0); // CPU interface の配信を停止。
@@ -118,6 +130,7 @@ fn configure_timer_irq() {
 
 fn wait_100ms(frequency: u64) -> u64 {
     // EL2 から呼ぶ。100 ms後の物理カウンタ値をタイマーの期限にする。
+    // 100 msは確認用に選んだ時間。周波数は固定せず CNTFRQ_EL0 から取得する。
     assert!(frequency > 0);
     let start = physical_counter();
     let deadline = start.wrapping_add(frequency.div_ceil(10));

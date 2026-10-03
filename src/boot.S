@@ -1,7 +1,9 @@
 .section .text.boot, "ax"
 .global _start
 _start:
-    // Single CPU, MMU off; keep exceptions masked until vectors exist.
+    // QEMU の ELF 直接起動で単一CPU・MMU無効を前提とする。
+    // 実機ではブートローダーとの取り決めで、この初期状態を確認する。
+    // DAIF のマスク値と SPSel の値は AArch64 の仕様。
     msr daifset, #0xf
     msr spsel, #1
     ldr x0, =__stack_top
