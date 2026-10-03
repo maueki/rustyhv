@@ -4,6 +4,9 @@
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static TIMER_IRQ_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 global_asm!(include_str!("boot.S"));
 global_asm!(include_str!("vectors.S"));
@@ -131,14 +134,14 @@ fn configure_timer_irq() {
 }
 
 #[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
-fn test_timer_irq(frequency: u64) -> ! {
+fn test_timer_irq(frequency: u64) {
     assert!(frequency > 0);
     serial_write(b"Waiting for timer IRQ (100 ms)\r\n");
     let deadline = physical_counter().wrapping_add(frequency.div_ceil(10));
     // SAFETY: EL2 のベクタ、スタック、GIC の設定後に呼ぶ。
     // HCR_EL2.IMO（ビット4）は AArch64 の仕様で、物理 IRQ を EL2 へ送る。
     // 他の HCR ビットを維持し、タイマーの IMASK と DAIF.I だけを解除する。
-    // ハンドラーは割込みをマスクして停止するため、元の処理へは復帰しない。
+    // ハンドラーはタイマーを停止し、保存した CPU 状態へ復帰する。
     unsafe {
         asm!(
             "mrs {hcr}, HCR_EL2",
@@ -155,8 +158,13 @@ fn test_timer_irq(frequency: u64) -> ! {
             options(nostack, preserves_flags),
         );
     }
-    // IRQ はポーリングせず、既存の例外ハンドラーで受ける。
-    halt()
+    // ハンドラーの完了を待つ。通知は割込み前後のどちらでも見落とさない。
+    while !TIMER_IRQ_RECEIVED.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
+    // SAFETY: 一度の受信試験を終え、CPU の IRQ を再びマスクする。
+    unsafe { asm!("msr daifset, #0x2", options(nostack, preserves_flags)) };
+    serial_write(b"Returned from timer IRQ\r\n");
 }
 
 fn wait_100ms(frequency: u64) -> u64 {
@@ -200,11 +208,11 @@ fn wait_100ms(frequency: u64) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn exception_handler(vector: u64) -> ! {
+extern "C" fn exception_handler(vector: u64) {
     let esr: u64;
     let elr: u64;
-    // SAFETY: This handler is entered through the EL2 vector table.
-    // Read the exception registers before printing; neither MRS changes them.
+    // SAFETY: EL2 の例外ベクタから呼ぶ。出力前に例外レジスタを読む。
+    // MRS はこれらのレジスタの値を変更しない。
     unsafe {
         asm!(
             "mrs {esr}, ESR_EL2",
@@ -234,13 +242,15 @@ extern "C" fn exception_handler(vector: u64) -> ! {
     serial_write(b"ELR_EL2: ");
     serial_hex(elr);
     serial_write(b"\r\n");
-    if vector & 3 == 1 {
-        finish_irq();
+    // 現在の EL・SP_ELx の IRQ 入口だけが CPU 状態を保存している。
+    if vector == 5 && finish_irq() {
+        TIMER_IRQ_RECEIVED.store(true, Ordering::Release);
+        return;
     }
     halt()
 }
 
-fn finish_irq() {
+fn finish_irq() -> bool {
     // QEMU virt 固有: GICv2 CPU interface の配置。
     const GICC: usize = 0x0801_0000;
     // IAR / EOIR のオフセットと INTID の下位10ビットは GICv2 の仕様。
@@ -254,7 +264,7 @@ fn finish_irq() {
     // 1020以上は特殊な応答で、通常の割込みとして完了通知しない。
     if intid >= 1020 {
         serial_write(b"No IRQ to complete\r\n");
-        return;
+        return false;
     }
     if intid == 26 {
         // QEMU virt の EL2 物理タイマー。完了通知前に割込み要求を止める。
@@ -273,6 +283,8 @@ fn finish_irq() {
         asm!("dsb sy", options(nostack, preserves_flags));
     }
     serial_write(b"IRQ completed\r\n");
+    // 未対応の割込みでは復帰せず停止する。
+    intid == 26
 }
 
 fn serial_hex(value: u64) {

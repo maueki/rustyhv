@@ -1,5 +1,12 @@
 # 変更履歴
 
+## 2026-10-03 — タイマー IRQ からの復帰
+
+- 現在の EL・SP_ELx の IRQ 入口で x0〜x30、ELR_EL2、SPSR_EL2 を保存・復元し、`eret` で復帰。
+- PPI 26 の完了を AtomicBool で通知し、試験側で受信後に IRQ を再びマスクして復帰メッセージを表示。
+- 同期例外・未対応の割込みは停止。FP/SIMD の保存、EL 移行、周期タイマーは未実装。
+- 整形、Clippy、QEMU の通常起動・BRK・IRQ・両 feature 同時指定と、release の IRQ 復帰を確認。
+
 ## 2026-10-03 — タイマー IRQ の識別と完了通知
 
 - IRQ ハンドラーで `GICC_IAR` を一度読み、INTID を表示。
