@@ -35,6 +35,13 @@ extern "C" fn kernel_main() -> ! {
     let frequency = timer_frequency();
     serial_hex(frequency);
     serial_write(b"\r\n");
+    let (gic_version, intid_limit) = gic_info();
+    serial_write(b"GIC version: ");
+    serial_hex(gic_version);
+    serial_write(b"\r\nGIC INTID limit: ");
+    serial_hex(intid_limit);
+    serial_write(b"\r\n");
+    assert!(gic_version == 2);
     if current_el() == 2 {
         // SAFETY: At EL2, VBAR_EL2 is writable. The assembly table is
         // 2048-byte aligned; ISB makes it effective before the test trap.
@@ -60,6 +67,23 @@ extern "C" fn kernel_main() -> ! {
         }
     }
     halt()
+}
+
+fn gic_info() -> (u64, u64) {
+    const GICD_BASE: usize = 0x0800_0000;
+    // SAFETY: QEMU virt の GICv2 Distributor の読み取り専用レジスタ。
+    // MMU は無効で、アドレスは32ビットアクセスに必要な境界に揃っている。
+    let (pidr2, typer) = unsafe {
+        (
+            read_volatile((GICD_BASE + 0xfe8) as *const u32),
+            read_volatile((GICD_BASE + 0x004) as *const u32),
+        )
+    };
+    // ArchRev は [7:4]。ITLinesNumber [4:0] は32個単位の番号範囲を示す。
+    (
+        u64::from((pidr2 >> 4) & 0xf),
+        u64::from((typer & 0x1f) + 1) * 32,
+    )
 }
 
 fn wait_100ms(frequency: u64) -> u64 {

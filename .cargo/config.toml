@@ -2,4 +2,4 @@
 target = "aarch64-unknown-none-softfloat"
 
 [target.aarch64-unknown-none-softfloat]
-runner = ["qemu-system-aarch64", "-machine", "virt,virtualization=on", "-cpu", "cortex-a57", "-accel", "tcg", "-smp", "1", "-m", "128M", "-display", "none", "-serial", "stdio", "-monitor", "none", "-nic", "none", "-kernel"]
+runner = ["qemu-system-aarch64", "-machine", "virt,virtualization=on,gic-version=2", "-cpu", "cortex-a57", "-accel", "tcg", "-smp", "1", "-m", "128M", "-display", "none", "-serial", "stdio", "-monitor", "none", "-nic", "none", "-kernel"]
