@@ -1,5 +1,12 @@
 # 変更履歴
 
+## 2026-10-06 — HVC による EL1 と EL2 の往復
+
+- 下位 EL の AArch64 同期例外入口にも既存の CPU 状態保存・復帰処理を接続。
+- `el1-test` で `hvc #0` を2回実行し、EL2 で処理後に EL1 へ復帰することを確認。
+- ベクタ位置 `0x400`、ESR の EC=0x16、即値0で試験用 HVC を識別。未対応の例外は停止。
+- 整形、Clippy、QEMU の通常起動・BRK・IRQ・EL1/HVC・feature 同時指定、release の HVC 往復を確認。
+
 ## 2026-10-03 — EL2 から EL1 への移行
 
 - `el1-test` feature と別の64 KiBスタックを追加。

@@ -115,6 +115,14 @@ fn enter_el1() -> ! {
 extern "C" fn el1_main() -> ! {
     assert!(current_el() == 1);
     serial_write(b"CurrentEL: EL1\r\n");
+    // SAFETY: EL2 のベクタは設置済みで HCR_EL2.HCD=0（HVC を許可）。
+    // hvc #0 は今回の試験用呼び出し。EL2 がレジスタと PSTATE を復元して戻る。
+    // 同じ呼び出しを二度行い、復帰後も EL1 から再度呼べることを確認する。
+    for _ in 0..2 {
+        unsafe { asm!("hvc #0", options(nostack, preserves_flags)) };
+        assert!(current_el() == 1);
+        serial_write(b"Returned from HVC at EL1\r\n");
+    }
     halt()
 }
 
@@ -240,7 +248,14 @@ extern "C" fn exception_handler(vector: u64) {
     serial_write(b"ELR_EL2: ");
     serial_hex(elr);
     serial_write(b"\r\n");
-    // 現在の EL・SP_ELx の IRQ 入口だけが CPU 状態を保存している。
+    // 下位 EL の AArch64 同期例外入口。EC=0x16 は AArch64 の HVC。
+    // 即値0だけを今回の試験として扱う。HVC の ELR は次の命令を指すので変更しない。
+    if vector == 8 && esr >> 26 == 0x16 && esr & 0xffff == 0 {
+        assert!(current_el() == 2);
+        serial_write(b"HVC handled at EL2\r\n");
+        return;
+    }
+    // 現在の EL・SP_ELx の IRQ 入口も CPU 状態を保存している。
     if vector == 5 && finish_irq() {
         TIMER_IRQ_RECEIVED.store(true, Ordering::Release);
         return;

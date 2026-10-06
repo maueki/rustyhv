@@ -4,15 +4,15 @@
 .balign 2048
 .global exception_vectors
 exception_vectors:
-    // 4種類の例外が4グループ。現在の EL・SP_ELx の IRQ だけ復帰に対応。
+    // 現在の EL・SP_ELx の IRQ と、下位 EL の AArch64 同期例外は状態を保存する。
     .set vector_id, 0
     .rept 16
-        .if vector_id == 5
+        .if (vector_id == 5) || (vector_id == 8)
             // x0・x1 を変更する前に保存。272バイトで16バイト境界を維持する。
             sub sp, sp, #272
             stp x0, x1, [sp, #0]
             mov x0, #vector_id
-            b irq_entry
+            b saved_exception_entry
         .else
             // 致命的な例外では元の処理へ戻らず、番号を第1引数に渡す。
             mov x0, #vector_id
@@ -32,7 +32,7 @@ exception_entry:
 
 // AArch64 の例外復帰処理。QEMU 固有の操作はない。
 // softfloat ターゲットを使うため、FP/SIMD レジスタは今回の保存対象に含めない。
-irq_entry:
+saved_exception_entry:
     msr daifset, #0xf
     stp x2, x3, [sp, #16]
     stp x4, x5, [sp, #32]
