@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+mod hvc;
+
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
@@ -130,12 +132,9 @@ fn enter_el1() -> ! {
 extern "C" fn el1_main() -> ! {
     assert!(current_el() == 1);
     serial_write(b"CurrentEL: EL1\r\n");
-    // SAFETY: EL2 のベクタは設置済みで HCR_EL2.HCD=0（HVC を許可）。
-    // hvc #0 は x0 の整数を1増やして x0 に返す試験用呼び出し。
-    // x0 以外のレジスタと PSTATE は復元される。加算は64ビットで折り返す。
+    // 呼び出し側は安全な Rust 関数を使う。加算は64ビットで折り返す。
     for input in [41u64, u64::MAX] {
-        let mut result = input;
-        unsafe { asm!("hvc #0", inout("x0") result, options(nostack, preserves_flags)) };
+        let result = hvc::increment(input).expect("increment failed");
         assert!(result == input.wrapping_add(1));
         assert!(current_el() == 1);
         serial_write(b"Returned from HVC at EL1\r\n");
@@ -143,6 +142,11 @@ extern "C" fn el1_main() -> ! {
         serial_hex(result);
         serial_write(b"\r\n");
     }
+    // 未対応の操作でも停止せず、エラーとして EL1 へ戻る。
+    assert!(hvc::call(u64::MAX, 123) == Err(hvc::Error::UnsupportedOperation));
+    serial_write(b"Unsupported HVC returned an error\r\n");
+    assert!(hvc::increment(0) == Ok(1));
+    serial_write(b"HVC works after an error\r\n");
     halt()
 }
 
@@ -275,9 +279,16 @@ extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
         assert!(!frame.is_null());
         // SAFETY: 状態保存入口が第2引数に、自身のスタック上の保存領域を渡す。
         // 配置は ExceptionFrame と一致し、割込みはマスク済み。参照は復帰前に終了する。
-        // 保存された x0 を変更すると、アセンブリの復元時に EL1 の戻り値となる。
+        // 保存された x0・x1 を変更すると、復元時に EL1 の状態コード・結果となる。
         let frame = unsafe { &mut *frame };
-        frame.registers[0] = frame.registers[0].wrapping_add(1);
+        let operation = frame.registers[0];
+        let argument = frame.registers[1];
+        let (status, result) = match operation {
+            hvc::INCREMENT => (hvc::OK, argument.wrapping_add(1)),
+            _ => (hvc::UNSUPPORTED, 0),
+        };
+        frame.registers[0] = status;
+        frame.registers[1] = result;
         serial_write(b"HVC handled at EL2\r\n");
         return;
     }
