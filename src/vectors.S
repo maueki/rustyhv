@@ -28,6 +28,8 @@ exception_entry:
     msr spsel, #1
     ldr x1, =__stack_top
     mov sp, x1
+    // 保存領域がない致命的な例外では第2引数を null にする。
+    mov x1, xzr
     b exception_handler
 
 // AArch64 の例外復帰処理。QEMU 固有の操作はない。
@@ -52,6 +54,8 @@ saved_exception_entry:
     mrs x1, ELR_EL2
     mrs x2, SPSR_EL2
     stp x1, x2, [sp, #256]
+    // 第2引数に ExceptionFrame の先頭を渡す。Rust が保存値を変更できる。
+    mov x1, sp
     bl exception_handler
 
     // 復帰先と元の PSTATE を戻す。DAIF と NZCV は eret が復元する。

@@ -8,6 +8,21 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 static TIMER_IRQ_RECEIVED: AtomicBool = AtomicBool::new(false);
 
+// vectors.S の272バイトの保存領域と同じ配置。予約欄で16バイト境界を維持する。
+#[repr(C)]
+struct ExceptionFrame {
+    registers: [u64; 31],
+    reserved: u64,
+    elr: u64,
+    spsr: u64,
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ExceptionFrame>() == 272);
+    assert!(core::mem::offset_of!(ExceptionFrame, elr) == 256);
+    assert!(core::mem::offset_of!(ExceptionFrame, spsr) == 264);
+};
+
 global_asm!(include_str!("boot.S"));
 global_asm!(include_str!("vectors.S"));
 
@@ -116,12 +131,17 @@ extern "C" fn el1_main() -> ! {
     assert!(current_el() == 1);
     serial_write(b"CurrentEL: EL1\r\n");
     // SAFETY: EL2 のベクタは設置済みで HCR_EL2.HCD=0（HVC を許可）。
-    // hvc #0 は今回の試験用呼び出し。EL2 がレジスタと PSTATE を復元して戻る。
-    // 同じ呼び出しを二度行い、復帰後も EL1 から再度呼べることを確認する。
-    for _ in 0..2 {
-        unsafe { asm!("hvc #0", options(nostack, preserves_flags)) };
+    // hvc #0 は x0 の整数を1増やして x0 に返す試験用呼び出し。
+    // x0 以外のレジスタと PSTATE は復元される。加算は64ビットで折り返す。
+    for input in [41u64, u64::MAX] {
+        let mut result = input;
+        unsafe { asm!("hvc #0", inout("x0") result, options(nostack, preserves_flags)) };
+        assert!(result == input.wrapping_add(1));
         assert!(current_el() == 1);
         serial_write(b"Returned from HVC at EL1\r\n");
+        serial_write(b"HVC result: ");
+        serial_hex(result);
+        serial_write(b"\r\n");
     }
     halt()
 }
@@ -214,7 +234,7 @@ fn test_timer_irq(frequency: u64) {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn exception_handler(vector: u64) {
+extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
     let esr: u64;
     let elr: u64;
     // SAFETY: EL2 の例外ベクタから呼ぶ。出力前に例外レジスタを読む。
@@ -252,6 +272,12 @@ extern "C" fn exception_handler(vector: u64) {
     // 即値0だけを今回の試験として扱う。HVC の ELR は次の命令を指すので変更しない。
     if vector == 8 && esr >> 26 == 0x16 && esr & 0xffff == 0 {
         assert!(current_el() == 2);
+        assert!(!frame.is_null());
+        // SAFETY: 状態保存入口が第2引数に、自身のスタック上の保存領域を渡す。
+        // 配置は ExceptionFrame と一致し、割込みはマスク済み。参照は復帰前に終了する。
+        // 保存された x0 を変更すると、アセンブリの復元時に EL1 の戻り値となる。
+        let frame = unsafe { &mut *frame };
+        frame.registers[0] = frame.registers[0].wrapping_add(1);
         serial_write(b"HVC handled at EL2\r\n");
         return;
     }
