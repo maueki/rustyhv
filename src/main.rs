@@ -2,6 +2,8 @@
 #![no_main]
 
 mod hvc;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod shell;
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
@@ -132,6 +134,19 @@ fn enter_el1() -> ! {
 extern "C" fn el1_main() -> ! {
     assert!(current_el() == 1);
     hvc::write_str("CurrentEL: EL1\r\n").expect("console failed");
+    #[cfg(feature = "shell")]
+    shell::run().expect("shell console failed");
+    #[cfg(not(feature = "shell"))]
+    test_hvc();
+    halt()
+}
+
+#[cfg(all(
+    feature = "el1-test",
+    not(feature = "exception-test"),
+    not(feature = "shell")
+))]
+fn test_hvc() {
     // 呼び出し側は安全な Rust 関数を使う。加算は64ビットで折り返す。
     for input in [41u64, u64::MAX] {
         let result = hvc::increment(input).expect("increment failed");
@@ -152,7 +167,6 @@ extern "C" fn el1_main() -> ! {
     hvc::write_str("Invalid console byte rejected\r\n").expect("console failed");
     hvc::write_str("Console via HVC: Rustからこんにちは\r\n").expect("console failed");
     assert!(hvc::call(hvc::CONSOLE_READ, 1) == Err(hvc::Error::InvalidArgument));
-    halt()
 }
 
 fn gic_info() -> (u64, u64) {

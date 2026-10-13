@@ -1,5 +1,14 @@
 # 変更履歴
 
+## 2026-10-13 — EL1 の簡易シェル
+
+- `shell` feature と `shell.rs` を追加。`help`・`info`・`echo` を HVC 経由の入出力で実行。
+- 安全な `read_byte()` を追加し、未入力を `Option` で扱う。
+- 128バイトの ASCII 行編集、CR/LF/CRLF、Backspace/Delete、Ctrl+C、超過行の破棄に対応。
+- シリアルを `mon:stdio` に変更して Ctrl+C をゲストへ渡す。QEMU の終了は Ctrl+A → X。
+- QEMU の対話検証スクリプトを追加し、debug・release でコマンド・編集・エラー後の継続・終了キーを検証。
+- 整形、Clippy、通常起動・BRK・IRQ・既存 HVC・feature 同時指定も確認。履歴・入力割込み・外部コマンドは未実装。
+
 ## 2026-10-13 — シェル用の UART 入力処理
 
 - PL011 の受信を有効化し、HVC 操作3で1バイトを取得。引数は0のみ許可。

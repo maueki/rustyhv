@@ -22,6 +22,7 @@ mod client {
         UnknownStatus(u64),
     }
 
+    #[cfg(not(feature = "shell"))]
     pub(crate) fn increment(value: u64) -> Result<u64, Error> {
         call(super::INCREMENT, value)
     }
@@ -37,6 +38,15 @@ mod client {
             call(super::CONSOLE_BYTE, u64::from(byte))?;
         }
         Ok(())
+    }
+
+    #[cfg(feature = "shell")]
+    pub(crate) fn read_byte() -> Result<Option<u8>, Error> {
+        match call(super::CONSOLE_READ, 0) {
+            Ok(value) => Ok(Some(u8::try_from(value).expect("invalid console byte"))),
+            Err(Error::WouldBlock) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn call(operation: u64, argument: u64) -> Result<u64, Error> {
@@ -61,4 +71,14 @@ mod client {
 }
 
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
-pub(super) use client::{Error, call, increment, write_bytes, write_str};
+pub(super) use client::{Error, write_bytes, write_str};
+
+#[cfg(all(
+    feature = "el1-test",
+    not(feature = "exception-test"),
+    not(feature = "shell")
+))]
+pub(super) use client::{call, increment};
+
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+pub(super) use client::read_byte;

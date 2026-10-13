@@ -10,6 +10,7 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 `CurrentEL` レジスタを読み取り、EL2 なら例外ベクタを設置する。例外時は `EXCEPTION` と出力する。
 `timer-irq-test` feature でタイマー IRQ の受信も確認できる。
 タイマー IRQ からの復帰と、`el1-test` feature で EL2 → EL1 の移行・HVC の往復に対応。
+`shell` feature で EL1 の簡易シェルを起動できる。
 VM の実行、MMU、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
@@ -44,7 +45,8 @@ GIC INTID limit: 0x0000000000000120
 Timer IRQ configured (masked)
 ```
 
-出力後は待機し、`Ctrl+C` で QEMU を終了する。
+出力後は待機する。QEMU の終了は `Ctrl+A` を押した後に `X`。
+`mon:stdio` を使うため、`Ctrl+C` はゲストのシェルへ渡る。
 
 `CNTFRQ_EL0` が保持するシステムカウンタの周波数を Hz 単位の16進数で表示する。
 上の値は 62,500,000 Hz（62.5 MHz）。CPU の動作周波数とは別で、
@@ -174,7 +176,7 @@ EL1 側は移行先が EL1 であることを確認し、`Returned from HVC at E
 
 | レジスタ | 呼び出し時 | 復帰時 |
 |---|---|---|
-| x0 | 操作番号（1: 整数を1増やす、2: 1バイト出力） | 状態（0: 成功、1: 未対応、2: 不正引数） |
+| x0 | 操作番号（1: 整数を1増やす、2: 1バイト出力、3: 1バイト入力） | 状態（0: 成功、1: 未対応、2: 不正引数、3: 未入力、4: 受信エラー） |
 | x1 | 整数引数 | 結果（文字出力・エラー時は0） |
 
 x2〜x30 と PSTATE は保持する。加算は64ビットで折り返す。
@@ -185,6 +187,7 @@ HVC のアセンブリと状態コードの解釈は `src/hvc.rs` 内にまと�
 EL1 から `41 → 42`、`u64::MAX → 0`、未対応操作のエラー、その後の正常呼び出しを確認する。
 EL1 の通常出力は `hvc::write_str(&str)` / `write_bytes(&[u8])` を使い、UART の操作は EL2 が行う。
 操作2は引数0〜255だけを受け付ける。文字列は UTF-8 の各バイトを整数で渡し、EL2 は EL1 のポインタを読まない。
+操作3の引数は0。入力がなければ即座に未入力を返す。`read_byte()` は未入力を `Ok(None)` に変換する。
 途中でエラーになった場合、それ以前のバイトは出力済み。1バイトごとの HVC なので大量出力向けの最適化は未実装。
 不正な引数256の拒否と、その後の日本語出力も確認する。
 
@@ -204,6 +207,47 @@ EL1 の UART 直接アクセスを禁止する保護や、EL1 専用の panic �
 EL1 自身の例外ベクタはまだ設置しない。HVC は EL2 の例外ベクタで受ける。
 `timer-irq-test` と同時に指定すると IRQ の受信・復帰後に EL1 へ移行する。
 `exception-test` も指定した場合は BRK テストを優先し、EL1 へ移行しない。
+
+### 簡易シェル
+
+```sh
+cargo run --features shell
+```
+
+EL2 で初期化し、EL1 に移行して次のプロンプトを表示する。
+`shell` は `el1-test` を有効にするが、整数操作の試験に代えてシェルを実行する。
+
+```text
+Ferrovisor shell (EL1). Type help.
+ferrovisor> help
+help       Show commands
+info       Show system information
+echo TEXT  Print TEXT
+ferrovisor> echo hello
+hello
+ferrovisor>
+```
+
+- `help`: コマンド一覧。`info`: 現在の固定構成（EL1 シェル、EL2 コンソール、QEMU virt）を表示。
+- `echo TEXT`: 引数を表示。先頭と末尾の空白は除き、途中の空白は保持する。
+- Enter（CR・LF・CRLF）、Backspace / Delete、Ctrl+C に対応。Ctrl+C は入力行を取り消す。
+- 入力は ASCII の印字文字、最大128バイト。超過した行は Enter 時に全体を破棄する。
+- 空行は何も実行せず、未知のコマンドや不正な引数はメッセージを表示して入力へ戻る。
+- UART の受信エラー時は行を破棄して入力へ戻る。通常の入出力に EL1 側の `unsafe` は不要。
+
+履歴、矢印キー、日本語入力、外部プログラム、ファイル操作、VM 管理コマンドは未実装。
+入力は HVC 経由のポーリングで、待機中も CPU を使う。入力割込みと省電力待機は後続のステップ。
+QEMU の終了は `Ctrl+A` → `X`。`timer-irq-test` と併用すると IRQ 試験後にシェルを起動する。
+`exception-test` との併用では BRK 試験を優先し、シェルを起動しない。
+
+対話の自動検証（Python 3.11 以降）:
+
+```sh
+python3 tools/test-shell.py
+python3 tools/test-shell.py --release
+```
+
+実際の Cargo runner 設定で QEMU を起動し、コマンド・行編集・入力上限・復帰・終了キーを検証する。
 
 ### 参照
 
