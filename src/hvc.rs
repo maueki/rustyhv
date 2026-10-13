@@ -2,9 +2,12 @@
 // 復帰時の x0 は状態コード、x1 は結果。それ以外のレジスタは保持する。
 pub(super) const INCREMENT: u64 = 1;
 pub(super) const CONSOLE_BYTE: u64 = 2;
+pub(super) const CONSOLE_READ: u64 = 3;
 pub(super) const OK: u64 = 0;
 pub(super) const UNSUPPORTED: u64 = 1;
 pub(super) const INVALID_ARGUMENT: u64 = 2;
+pub(super) const WOULD_BLOCK: u64 = 3;
+pub(super) const INPUT_ERROR: u64 = 4;
 
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
 mod client {
@@ -14,6 +17,8 @@ mod client {
     pub(crate) enum Error {
         UnsupportedOperation,
         InvalidArgument,
+        WouldBlock,
+        ReceiveFault,
         UnknownStatus(u64),
     }
 
@@ -48,6 +53,8 @@ mod client {
             super::OK => Ok(result),
             super::UNSUPPORTED => Err(Error::UnsupportedOperation),
             super::INVALID_ARGUMENT => Err(Error::InvalidArgument),
+            super::WOULD_BLOCK => Err(Error::WouldBlock),
+            super::INPUT_ERROR => Err(Error::ReceiveFault),
             other => Err(Error::UnknownStatus(other)),
         }
     }

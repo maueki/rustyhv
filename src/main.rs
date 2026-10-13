@@ -51,7 +51,7 @@ extern "C" fn kernel_main() -> ! {
         write_volatile((UART + 0x24) as *mut u32, 13); // 整数部の除数。
         write_volatile((UART + 0x28) as *mut u32, 1); // 小数部の除数。
         write_volatile((UART + 0x2c) as *mut u32, 0x70); // 8ビット・FIFO有効。
-        write_volatile((UART + 0x30) as *mut u32, 0x101); // UART と送信を有効化。
+        write_volatile((UART + 0x30) as *mut u32, 0x301); // UART・送信・受信を有効化。
     }
     serial_write(b"Ferrovisor\r\n");
     serial_write(b"CurrentEL: EL");
@@ -151,6 +151,7 @@ extern "C" fn el1_main() -> ! {
     assert!(hvc::call(hvc::CONSOLE_BYTE, 256) == Err(hvc::Error::InvalidArgument));
     hvc::write_str("Invalid console byte rejected\r\n").expect("console failed");
     hvc::write_str("Console via HVC: Rustからこんにちは\r\n").expect("console failed");
+    assert!(hvc::call(hvc::CONSOLE_READ, 1) == Err(hvc::Error::InvalidArgument));
     halt()
 }
 
@@ -276,6 +277,8 @@ extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
                 }
                 Err(_) => (hvc::INVALID_ARGUMENT, 0),
             },
+            hvc::CONSOLE_READ if argument == 0 => serial_read(),
+            hvc::CONSOLE_READ => (hvc::INVALID_ARGUMENT, 0),
             _ => (hvc::UNSUPPORTED, 0),
         };
         frame.registers[0] = status;
@@ -416,6 +419,23 @@ fn serial_write(bytes: &[u8]) {
             }
             write_volatile(UART_DR, u32::from(byte));
         }
+    }
+}
+
+fn serial_read() -> (u64, u64) {
+    // SAFETY: EL2 の HVC ハンドラーから、初期化済み PL011 を単一 CPU で操作する。
+    // RXFE（ビット4）と DR のエラービット [11:8] は PL011 の仕様。
+    unsafe {
+        if read_volatile(UART_FR) & (1 << 4) != 0 {
+            return (hvc::WOULD_BLOCK, 0);
+        }
+        let data = read_volatile(UART_DR);
+        if data & 0xf00 != 0 {
+            // ECR への書き込みで受信エラーを解除。不良バイトは呼び出し元へ渡さない。
+            write_volatile((UART + 0x04) as *mut u32, 0);
+            return (hvc::INPUT_ERROR, 0);
+        }
+        (hvc::OK, u64::from(data & 0xff))
     }
 }
 
