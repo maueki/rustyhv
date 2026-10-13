@@ -131,22 +131,26 @@ fn enter_el1() -> ! {
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
 extern "C" fn el1_main() -> ! {
     assert!(current_el() == 1);
-    serial_write(b"CurrentEL: EL1\r\n");
+    hvc::write_str("CurrentEL: EL1\r\n").expect("console failed");
     // 呼び出し側は安全な Rust 関数を使う。加算は64ビットで折り返す。
     for input in [41u64, u64::MAX] {
         let result = hvc::increment(input).expect("increment failed");
         assert!(result == input.wrapping_add(1));
         assert!(current_el() == 1);
-        serial_write(b"Returned from HVC at EL1\r\n");
-        serial_write(b"HVC result: ");
-        serial_hex(result);
-        serial_write(b"\r\n");
+        hvc::write_str("Returned from HVC at EL1\r\n").expect("console failed");
+        hvc::write_str("HVC result: ").expect("console failed");
+        hvc::write_bytes(&hex_bytes(result)).expect("console failed");
+        hvc::write_str("\r\n").expect("console failed");
     }
     // 未対応の操作でも停止せず、エラーとして EL1 へ戻る。
     assert!(hvc::call(u64::MAX, 123) == Err(hvc::Error::UnsupportedOperation));
-    serial_write(b"Unsupported HVC returned an error\r\n");
+    hvc::write_str("Unsupported HVC returned an error\r\n").expect("console failed");
     assert!(hvc::increment(0) == Ok(1));
-    serial_write(b"HVC works after an error\r\n");
+    hvc::write_str("HVC works after an error\r\n").expect("console failed");
+    // 不正な整数を送っても UART へ切り詰めて出力せず、エラーで返す。
+    assert!(hvc::call(hvc::CONSOLE_BYTE, 256) == Err(hvc::Error::InvalidArgument));
+    hvc::write_str("Invalid console byte rejected\r\n").expect("console failed");
+    hvc::write_str("Console via HVC: Rustからこんにちは\r\n").expect("console failed");
     halt()
 }
 
@@ -252,6 +256,33 @@ extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
             options(nomem, nostack, preserves_flags),
         );
     }
+    // 下位 EL の AArch64 同期例外入口。EC=0x16 は AArch64 の HVC。
+    // 即値0だけを今回の試験として扱う。HVC の ELR は次の命令を指すので変更しない。
+    if vector == 8 && esr >> 26 == 0x16 && esr & 0xffff == 0 {
+        assert!(current_el() == 2);
+        assert!(!frame.is_null());
+        // SAFETY: 状態保存入口が第2引数に、自身のスタック上の保存領域を渡す。
+        // 配置は ExceptionFrame と一致し、割込みはマスク済み。参照は復帰前に終了する。
+        // 保存された x0・x1 を変更すると、復元時に EL1 の状態コード・結果となる。
+        let frame = unsafe { &mut *frame };
+        let operation = frame.registers[0];
+        let argument = frame.registers[1];
+        let (status, result) = match operation {
+            hvc::INCREMENT => (hvc::OK, argument.wrapping_add(1)),
+            hvc::CONSOLE_BYTE => match u8::try_from(argument) {
+                Ok(byte) => {
+                    serial_write(&[byte]);
+                    (hvc::OK, 0)
+                }
+                Err(_) => (hvc::INVALID_ARGUMENT, 0),
+            },
+            _ => (hvc::UNSUPPORTED, 0),
+        };
+        frame.registers[0] = status;
+        frame.registers[1] = result;
+        return;
+    }
+    // HVC は通常の呼び出しとして扱い、1バイトごとの例外ログは出さない。
     serial_write(b"EXCEPTION\r\n");
     serial_write(b"Vector offset: ");
     serial_hex(vector * 128);
@@ -272,26 +303,6 @@ extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
     serial_write(b"ELR_EL2: ");
     serial_hex(elr);
     serial_write(b"\r\n");
-    // 下位 EL の AArch64 同期例外入口。EC=0x16 は AArch64 の HVC。
-    // 即値0だけを今回の試験として扱う。HVC の ELR は次の命令を指すので変更しない。
-    if vector == 8 && esr >> 26 == 0x16 && esr & 0xffff == 0 {
-        assert!(current_el() == 2);
-        assert!(!frame.is_null());
-        // SAFETY: 状態保存入口が第2引数に、自身のスタック上の保存領域を渡す。
-        // 配置は ExceptionFrame と一致し、割込みはマスク済み。参照は復帰前に終了する。
-        // 保存された x0・x1 を変更すると、復元時に EL1 の状態コード・結果となる。
-        let frame = unsafe { &mut *frame };
-        let operation = frame.registers[0];
-        let argument = frame.registers[1];
-        let (status, result) = match operation {
-            hvc::INCREMENT => (hvc::OK, argument.wrapping_add(1)),
-            _ => (hvc::UNSUPPORTED, 0),
-        };
-        frame.registers[0] = status;
-        frame.registers[1] = result;
-        serial_write(b"HVC handled at EL2\r\n");
-        return;
-    }
     // 現在の EL・SP_ELx の IRQ 入口も CPU 状態を保存している。
     if vector == 5 && finish_irq() {
         TIMER_IRQ_RECEIVED.store(true, Ordering::Release);
@@ -337,13 +348,17 @@ fn finish_irq() -> bool {
     intid == 26
 }
 
-fn serial_hex(value: u64) {
+fn hex_bytes(value: u64) -> [u8; 18] {
     let mut bytes = *b"0x0000000000000000";
     for (index, byte) in bytes[2..].iter_mut().enumerate() {
         let digit = ((value >> ((15 - index) * 4)) & 0xf) as usize;
         *byte = b"0123456789abcdef"[digit];
     }
-    serial_write(&bytes);
+    bytes
+}
+
+fn serial_hex(value: u64) {
+    serial_write(&hex_bytes(value));
 }
 
 #[cfg(all(feature = "timer-irq-test", not(feature = "exception-test")))]
