@@ -7,6 +7,8 @@ mod app_api;
 mod apps;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod console_wait;
+#[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
+mod el1_exception;
 mod hvc;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod shell;
@@ -120,7 +122,7 @@ fn enter_el1() -> ! {
     // UART の通知は HVC 内の待機時だけ許可し、EL1 実行中には IRQ を要求しない。
     // SCTLR_EL1 は RES1 ビットを設定し、MMU・キャッシュを無効にする。
     // SPSR_EL2=0x3c5 は DAIF 全マスク・EL1h（SP_EL1 使用）。値は AArch64 の仕様。
-    // QEMU の初期化済み UART と物理 RAM 配置を使う。EL1 例外への対応は後続のステップ。
+    // QEMU の初期化済み UART と物理 RAM 配置を使う。EL1 の入口で例外ベクタを設置する。
     unsafe {
         asm!(
             "msr daifset, #0xf",
@@ -143,8 +145,11 @@ fn enter_el1() -> ! {
 
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
 extern "C" fn el1_main() -> ! {
+    el1_exception::install();
     assert!(current_el() == 1);
     hvc::write_str("CurrentEL: EL1\r\n").expect("console failed");
+    #[cfg(feature = "el1-exception-test")]
+    el1_exception::test();
     #[cfg(feature = "shell")]
     shell::run().expect("shell console failed");
     #[cfg(not(feature = "shell"))]

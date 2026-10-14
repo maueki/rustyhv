@@ -207,7 +207,8 @@ Console via HVC: Rustからこんにちは
 これは今回決めた試験用の取り決めで、AArch64 共通の API や正式な OS API ではない。
 同じ物理メモリを使う最小テストで、Stage 2 による隔離やゲスト VM の実行は未実装。
 EL1 の UART 直接アクセスを禁止する保護や、EL1 専用の panic 処理もまだ実装しない。
-EL1 自身の例外ベクタはまだ設置しない。HVC は EL2 の例外ベクタで受ける。
+EL1 の入口で `VBAR_EL1` を設定する。EL1 の致命的な例外は原因を表示して停止する。
+HVC は引き続き EL2 の例外ベクタで受ける。
 `timer-irq-test` と同時に指定すると IRQ の受信・復帰後に EL1 へ移行する。
 `exception-test` も指定した場合は BRK テストを優先し、EL1 へ移行しない。
 
@@ -277,6 +278,29 @@ ferrovisor>
 シェルと同じメモリ・スタックを使い、アプリの panic や停止はシェルにも影響する。
 外部ファイルからのロード、独立したプロセス、EL0、メモリ保護、アプリ実行中の強制中断は未実装。
 対話テストでは実行・再実行・シェルの再開・不正な名前と引数を debug / release で確認する。
+
+### EL1 の例外確認
+
+```sh
+cargo run --features el1-exception-test
+```
+
+EL1 のベクタ設置後、起動時に `brk #0` を実行する。
+シェルと HVC の通常試験より先に実行し、EL1 の例外ハンドラーで停止する。
+
+```text
+Testing BRK at EL1
+EXCEPTION at EL1
+Vector offset: 0x0000000000000200
+Kind: Synchronous
+ESR_EL1: 0x00000000f2000000
+ELR_EL1: ...
+```
+
+`src/el1_vectors.S` に AArch64 仕様のベクタ表を置き、`src/el1_exception.rs` で設置と診断を行う。
+16入口は現在すべて致命的で、EL1 のスタックを初期位置に戻し、HVC 経由で原因を表示する。
+元の処理への復帰、EL0 の実行、SVC の処理は次のステップ。
+`exception-test` も指定した場合は従来の EL2 BRK を優先し、EL1 へ移行しない。
 
 ### 参照
 

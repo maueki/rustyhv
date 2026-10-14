@@ -8,6 +8,7 @@ publish = false
 exception-test = []
 timer-irq-test = []
 el1-test = []
+el1-exception-test = ["el1-test"]
 shell = ["el1-test"]
 
 [profile.dev]
