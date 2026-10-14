@@ -2,14 +2,24 @@ mod hello;
 
 pub(super) enum RunError {
     NotFound,
-    Console(crate::app_api::Error),
+    ExitStatus(u64),
 }
 
 pub(super) fn run(name: &str) -> Result<(), RunError> {
-    // カーネルと一緒にリンクした Rust 関数を EL1 で同期的に呼ぶ。
-    // アプリが戻るとシェルを再開する。動的ロードやプロセスの分離はまだ行わない。
+    // 組み込みアプリを EL0 で同期的に実行する。終了 SVC でシェルを再開する。
     match name {
-        "hello" => hello::run().map_err(RunError::Console),
+        "hello" => match crate::el0::run(hello_entry) {
+            0 => Ok(()),
+            status => Err(RunError::ExitStatus(status)),
+        },
         _ => Err(RunError::NotFound),
     }
+}
+
+extern "C" fn hello_entry() -> ! {
+    let status = match hello::run() {
+        Ok(()) => 0,
+        Err(error) => error.0,
+    };
+    crate::app_api::exit(status)
 }

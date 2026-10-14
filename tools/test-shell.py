@@ -81,9 +81,13 @@ def main():
             check("empty line", b"\r\n", [b"\r\n"])
             check("unknown command", b"missing\r", [b"Unknown command; type help\r\n"])
             check("invalid arguments", b"info extra\r", [b"This command takes no arguments\r\n"])
-            check("run hello", b"run hello\r", [b"\r\nHello from app!\r\n"])
+            app_return = b"\r\nHello from app!\r\n" + prompt
+            check("run hello at EL0", b"run hello\r", [app_return])
             check("shell resumes after app", b"echo app returned\r", [b"\r\napp returned\r\n"])
-            check("run hello again", b"run   hello\r", [b"\r\nHello from app!\r\n"])
+            check("run hello again", b"run   hello\r", [app_return])
+            for _ in range(20):
+                check("repeated EL0 app", b"run hello\r", [app_return], verbose=False)
+            print("PASS: 20 EL0 app exits and shell returns", flush=True)
             check("missing app name", b"run\r", [b"Usage: run hello\r\n"])
             check("unknown app", b"run missing\r", [b"Unknown app; available: hello\r\n"])
             extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run hello\r\n"])

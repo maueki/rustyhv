@@ -7,6 +7,8 @@ mod app_api;
 mod apps;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod console_wait;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod el0;
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
 mod el1_exception;
 mod hvc;

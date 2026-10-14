@@ -108,7 +108,11 @@ fn execute(line: &str) -> Result<(), Error> {
                 Err(crate::apps::RunError::NotFound) => {
                     hvc::write_str("Unknown app; available: hello\r\n")
                 }
-                Err(crate::apps::RunError::Console(error)) => Err(error),
+                Err(crate::apps::RunError::ExitStatus(status)) => {
+                    hvc::write_str("App exited with status: ")?;
+                    hvc::write_bytes(&crate::hex_bytes(status))?;
+                    hvc::write_str("\r\n")
+                }
             }
         }
         "help" | "info" => hvc::write_str("This command takes no arguments\r\n"),

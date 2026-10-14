@@ -28,4 +28,10 @@ SECTIONS
         . += 64K;
         __el1_stack_top = .;
     }
+    .el0_stack (NOLOAD) : ALIGN(16)
+    {
+        /* 組み込みアプリ用の64 KiB。EL1 のシェルとは別のスタックを使う。 */
+        . += 64K;
+        __el0_stack_top = .;
+    }
 }
