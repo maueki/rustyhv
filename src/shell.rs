@@ -12,7 +12,9 @@ pub(super) fn run() -> Result<(), Error> {
     let mut after_cr = false;
     loop {
         let byte = match hvc::read_byte() {
+            // 受信成功。入力された1バイトを、下のキー処理へ渡す。
             Ok(byte) => byte,
+            // UART の受信エラー。編集中の行を破棄して、新しい入力を待つ。
             Err(Error::ReceiveFault) => {
                 length = 0;
                 overflow = false;
@@ -21,6 +23,7 @@ pub(super) fn run() -> Result<(), Error> {
                 hvc::write_str(PROMPT)?;
                 continue;
             }
+            // その他の HVC エラー。シェルを継続せず、呼び出し元へエラーを返す。
             Err(error) => return Err(error),
         };
         // CRLF を1回の Enter として扱う。CR 単独・LF 単独にも対応する。
@@ -30,6 +33,7 @@ pub(super) fn run() -> Result<(), Error> {
         }
         after_cr = byte == b'\r';
         match byte {
+            // Enter（CR または LF）。行を実行し、入力状態を初期化してプロンプトを出す。
             b'\r' | b'\n' => {
                 hvc::write_str("\r\n")?;
                 if overflow {
@@ -42,29 +46,33 @@ pub(super) fn run() -> Result<(), Error> {
                 overflow = false;
                 hvc::write_str(PROMPT)?;
             }
+            // Ctrl+C（ETX=3）。行を取り消す。シェル自体は終了しない。
             3 => {
-                // Ctrl+C は行の取り消し。シェル自体は終了しない。
                 length = 0;
                 overflow = false;
                 hvc::write_str("^C\r\n")?;
                 hvc::write_str(PROMPT)?;
             }
+            // Backspace（8）または DEL（127）。有効な行の末尾を1文字消し、画面も消す。
             8 | 127 if !overflow && length > 0 => {
                 length -= 1;
                 hvc::write_str("\x08 \x08")?;
             }
+            // 空行、または上限超過で破棄予定の行では、削除キーを無視する。
             8 | 127 => {}
+            // ASCII の印字文字（空白〜チルダ）。空きがあれば保存し、入力をエコーする。
             0x20..=0x7e if !overflow && length < line.len() => {
                 line[length] = byte;
                 length += 1;
                 hvc::write_bytes(&[byte])?;
             }
+            // 初めて入力上限を超えた印字文字。ベルを鳴らし、行全体を破棄対象にする。
             0x20..=0x7e if !overflow => {
-                // 超過後は行全体を破棄する。途中までのコマンドを実行しない。
                 overflow = true;
                 hvc::write_str("\x07")?;
             }
-            _ => {} // 非 ASCII・その他の制御文字は受け付けない。
+            // 上限超過後の印字文字、非 ASCII、上で扱わない制御文字は無視する。
+            _ => {}
         }
     }
 }
