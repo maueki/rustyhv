@@ -3,6 +3,7 @@
 pub(super) const INCREMENT: u64 = 1;
 pub(super) const CONSOLE_BYTE: u64 = 2;
 pub(super) const CONSOLE_READ: u64 = 3;
+pub(super) const CONSOLE_WAIT: u64 = 4;
 pub(super) const OK: u64 = 0;
 pub(super) const UNSUPPORTED: u64 = 1;
 pub(super) const INVALID_ARGUMENT: u64 = 2;
@@ -41,12 +42,9 @@ mod client {
     }
 
     #[cfg(feature = "shell")]
-    pub(crate) fn read_byte() -> Result<Option<u8>, Error> {
-        match call(super::CONSOLE_READ, 0) {
-            Ok(value) => Ok(Some(u8::try_from(value).expect("invalid console byte"))),
-            Err(Error::WouldBlock) => Ok(None),
-            Err(error) => Err(error),
-        }
+    pub(crate) fn read_byte() -> Result<u8, Error> {
+        // 未入力時は EL2 内で WFI 待機する。呼び出し側に unsafe は不要。
+        call(super::CONSOLE_WAIT, 0).map(|value| u8::try_from(value).expect("invalid console byte"))
     }
 
     pub(crate) fn call(operation: u64, argument: u64) -> Result<u64, Error> {

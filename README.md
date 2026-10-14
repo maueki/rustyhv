@@ -176,7 +176,7 @@ EL1 側は移行先が EL1 であることを確認し、`Returned from HVC at E
 
 | レジスタ | 呼び出し時 | 復帰時 |
 |---|---|---|
-| x0 | 操作番号（1: 整数を1増やす、2: 1バイト出力、3: 1バイト入力） | 状態（0: 成功、1: 未対応、2: 不正引数、3: 未入力、4: 受信エラー） |
+| x0 | 操作番号（1: 整数を1増やす、2: 出力、3: 待機なし入力、4: 待機付き入力） | 状態（0: 成功、1: 未対応、2: 不正引数、3: 未入力、4: 受信エラー） |
 | x1 | 整数引数 | 結果（文字出力・エラー時は0） |
 
 x2〜x30 と PSTATE は保持する。加算は64ビットで折り返す。
@@ -187,7 +187,9 @@ HVC のアセンブリと状態コードの解釈は `src/hvc.rs` 内にまと�
 EL1 から `41 → 42`、`u64::MAX → 0`、未対応操作のエラー、その後の正常呼び出しを確認する。
 EL1 の通常出力は `hvc::write_str(&str)` / `write_bytes(&[u8])` を使い、UART の操作は EL2 が行う。
 操作2は引数0〜255だけを受け付ける。文字列は UTF-8 の各バイトを整数で渡し、EL2 は EL1 のポインタを読まない。
-操作3の引数は0。入力がなければ即座に未入力を返す。`read_byte()` は未入力を `Ok(None)` に変換する。
+操作3の引数は0。入力がなければ即座に未入力を返す。
+シェルの `read_byte() -> Result<u8, Error>` は操作4を使い、入力が来るまで EL2 内で待機する。
+操作4の引数も0で、シェル構成でのみ利用可能。
 途中でエラーになった場合、それ以前のバイトは出力済み。1バイトごとの HVC なので大量出力向けの最適化は未実装。
 不正な引数256の拒否と、その後の日本語出力も確認する。
 
@@ -236,11 +238,16 @@ ferrovisor>
 - UART の受信エラー時は行を破棄して入力へ戻る。通常の入出力に EL1 側の `unsafe` は不要。
 
 履歴、矢印キー、日本語入力、外部プログラム、ファイル操作、VM 管理コマンドは未実装。
-入力は HVC 経由のポーリングで、待機中も CPU を使う。入力割込みと省電力待機は後続のステップ。
+入力がない間は、EL2 の HVC 内で UART の受信通知を許可して `wfi` で待機する。
+GICv2 の UART0 割込みは QEMU virt の INTID 33。シェルでは FIFO を無効にして1文字で起床させる。
+CPU の IRQ はマスクしたまま、保留割込みによる WFI の起床を使う。
+受信を再確認し、UART の通知を無効化してから GIC の受領・完了通知を行い、EL1 へ戻る。
+通常の IRQ ベクタに入る処理や、複数タスクのスケジューリングは今回追加しない。
+確認と WFI の間に文字が届いても IRQ が保留されるため、入力を見落として眠り続けない。
 QEMU の終了は `Ctrl+A` → `X`。`timer-irq-test` と併用すると IRQ 試験後にシェルを起動する。
 `exception-test` との併用では BRK 試験を優先し、シェルを起動しない。
 
-対話の自動検証（Python 3.11 以降）:
+対話の自動検証（Linux、Python 3.11 以降）:
 
 ```sh
 python3 tools/test-shell.py
@@ -248,9 +255,12 @@ python3 tools/test-shell.py --release
 ```
 
 実際の Cargo runner 設定で QEMU を起動し、コマンド・行編集・入力上限・復帰・終了キーを検証する。
+1文字入力と20回の起床に加え、Linux の `/proc` で1秒間の待機中に QEMU が使う CPU 時間を検証する。
 
 ### 参照
 
 - [QEMU virt](https://www.qemu.org/docs/master/system/arm/virt.html)
 - [QEMU virt のメモリマップ](https://github.com/qemu/qemu/blob/v9.2.0/hw/arm/virt.c)
+- [QEMU の PL011 実装](https://github.com/qemu/qemu/blob/v11.0.0/hw/char/pl011.c)
+- [Arm: 割込みのマスクと WFI の起床](https://documentation-service.arm.com/static/5ed6547eca06a95ce53f9321)
 - [Rust の AArch64 ベアメタルターゲット](https://doc.rust-lang.org/rustc/platform-support/aarch64-unknown-none.html)

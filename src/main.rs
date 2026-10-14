@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod console_wait;
 mod hvc;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod shell;
@@ -52,7 +54,9 @@ extern "C" fn kernel_main() -> ! {
         write_volatile((UART + 0x30) as *mut u32, 0); // UART を無効化。
         write_volatile((UART + 0x24) as *mut u32, 13); // 整数部の除数。
         write_volatile((UART + 0x28) as *mut u32, 1); // 小数部の除数。
-        write_volatile((UART + 0x2c) as *mut u32, 0x70); // 8ビット・FIFO有効。
+        // シェルでは1文字で RX IRQ を起こすため FIFO を無効化する。
+        let line_control = if cfg!(feature = "shell") { 0x60 } else { 0x70 };
+        write_volatile((UART + 0x2c) as *mut u32, line_control); // 8ビット。
         write_volatile((UART + 0x30) as *mut u32, 0x301); // UART・送信・受信を有効化。
     }
     serial_write(b"Ferrovisor\r\n");
@@ -105,8 +109,11 @@ fn enter_el1() -> ! {
         static __el1_stack_top: u8;
     }
     serial_write(b"Entering EL1\r\n");
+    #[cfg(feature = "shell")]
+    console_wait::configure();
     // SAFETY: 単一 CPU の EL2 から、別に確保した16バイト境界のスタックで EL1 へ移る。
-    // HCR_EL2 は RW=1（EL1 を AArch64 にする）だけを設定し、Stage 2 や IRQ 転送は無効。
+    // HCR_EL2 は RW=1。シェルでは IMO=1 も設定し、物理 IRQ を EL2 の待機解除に使う。
+    // UART の通知は HVC 内の待機時だけ許可し、EL1 実行中には IRQ を要求しない。
     // SCTLR_EL1 は RES1 ビットを設定し、MMU・キャッシュを無効にする。
     // SPSR_EL2=0x3c5 は DAIF 全マスク・EL1h（SP_EL1 使用）。値は AArch64 の仕様。
     // QEMU の初期化済み UART と物理 RAM 配置を使う。EL1 例外への対応は後続のステップ。
@@ -120,7 +127,7 @@ fn enter_el1() -> ! {
             "msr SPSR_EL2, {state}",
             "isb",
             "eret",
-            hcr = in(reg) 1u64 << 31,
+            hcr = in(reg) (1u64 << 31) | if cfg!(feature = "shell") { 1 << 4 } else { 0 },
             sctlr = in(reg) 0x30d0_0800u64,
             stack = in(reg) core::ptr::addr_of!(__el1_stack_top),
             entry = in(reg) el1_main as *const (),
@@ -293,6 +300,9 @@ extern "C" fn exception_handler(vector: u64, frame: *mut ExceptionFrame) {
             },
             hvc::CONSOLE_READ if argument == 0 => serial_read(),
             hvc::CONSOLE_READ => (hvc::INVALID_ARGUMENT, 0),
+            #[cfg(all(feature = "shell", not(feature = "exception-test")))]
+            hvc::CONSOLE_WAIT if argument == 0 => console_wait::read_blocking(),
+            hvc::CONSOLE_WAIT if argument != 0 => (hvc::INVALID_ARGUMENT, 0),
             _ => (hvc::UNSUPPORTED, 0),
         };
         frame.registers[0] = status;

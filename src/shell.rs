@@ -12,12 +12,7 @@ pub(super) fn run() -> Result<(), Error> {
     let mut after_cr = false;
     loop {
         let byte = match hvc::read_byte() {
-            Ok(Some(byte)) => byte,
-            Ok(None) => {
-                // 入力割込みは未実装。待機しない HVC を繰り返して受信を確認する。
-                core::hint::spin_loop();
-                continue;
-            }
+            Ok(byte) => byte,
             Err(Error::ReceiveFault) => {
                 length = 0;
                 overflow = false;
