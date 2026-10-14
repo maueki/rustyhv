@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "ferrovisor"
+name = "rustyhv"
 version = "0.1.0"

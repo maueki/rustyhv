@@ -1,10 +1,10 @@
 use crate::hvc::{self, Error};
 
-const PROMPT: &str = "ferrovisor> ";
+const PROMPT: &str = "rustyhv> ";
 const LINE_CAPACITY: usize = 128;
 
 pub(super) fn run() -> Result<(), Error> {
-    hvc::write_str("Ferrovisor shell (EL1). Type help.\r\n")?;
+    hvc::write_str("rustyhv shell (EL1). Type help.\r\n")?;
     hvc::write_str(PROMPT)?;
     let mut line = [0u8; LINE_CAPACITY];
     let mut length = 0;
@@ -89,7 +89,7 @@ fn execute(line: &str) -> Result<(), Error> {
             "help       Show commands\r\ninfo       Show system information\r\necho TEXT  Print TEXT\r\nrun hello  Run the built-in Rust app\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
-            "Ferrovisor\r\nShell: EL1, console: EL2 via HVC\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
+            "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
         ),
         "echo" => {
             hvc::write_str(arguments)?;

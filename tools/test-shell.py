@@ -20,14 +20,14 @@ def main():
         build.append("--release")
     subprocess.run(build, cwd=root, env=dict(os.environ, CARGO_TARGET_DIR="target"), check=True)
     profile = "release" if args.release else "debug"
-    kernel = root / "target" / "aarch64-unknown-none-softfloat" / profile / "ferrovisor"
+    kernel = root / "target" / "aarch64-unknown-none-softfloat" / profile / "rustyhv"
     config = tomllib.loads((root / ".cargo" / "config.toml").read_text())
     command = config["target"]["aarch64-unknown-none-softfloat"]["runner"] + [str(kernel)]
     with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE) as process:
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
-        prompt = b"ferrovisor> "
+        prompt = b"rustyhv> "
 
         def receive(prompts=1, ending=prompt):
             output = bytearray()
@@ -56,7 +56,7 @@ def main():
 
         try:
             boot = receive()
-            assert b"CurrentEL: EL1\r\nFerrovisor shell (EL1). Type help.\r\n" in boot, boot
+            assert b"CurrentEL: EL1\r\nrustyhv shell (EL1). Type help.\r\n" in boot, boot
             # Linux の /proc で QEMU 全体の CPU 時間を測る。入力待機で1コアを占有しない。
             def cpu_seconds():
                 fields = Path(f"/proc/{process.pid}/stat").read_text().rsplit(")", 1)[1].split()

@@ -1,11 +1,11 @@
-# Ferrovisor — 開発方針と初期ロードマップ
+# rustyhv — 開発方針と初期ロードマップ
 
 作成日: 2026-09-30  
 状態: 設計案・最小起動の実装開始
 
 ## 1. 目的
 
-Ferrovisor は、Rust のネイティブアプリケーションとゲスト VM を同じ基盤で動かす、Rust 中心の OS／ハイパーバイザーを目指す。
+rustyhv は、Rust のネイティブアプリケーションとゲスト VM を同じ基盤で動かす、Rust 中心の OS／ハイパーバイザーを目指す。
 
 OS を Rust で作りながら、メモリ管理、割込み、スケジューリング、権限管理、デバイス、仮想化を学ぶ。実用面では、ネイティブ側に小さな監視・制御処理を置き、既存のソフトウェアを Linux VM で動かす構成を目標にする。
 
@@ -19,7 +19,7 @@ OS を Rust で作りながら、メモリ管理、割込み、スケジュー�
 
 | 項目 | 状態 | 内容 |
 | --- | --- | --- |
-| 名称 | 決定 | **Ferrovisor**。リポジトリ名は `ferrovisor` |
+| 名称 | 決定 | **rustyhv** |
 | 開発の目的 | 本人の希望 | Rust による OS 開発を学び、実用性も持たせる |
 | ハイパーバイザー | 本人の希望 | ゲスト OS を動かせる方向に進める |
 | ネイティブ実行 | 本人の希望 | ハイパーバイザー側でもアプリを動かし、Rust アプリに適した設計にする |
@@ -28,13 +28,13 @@ OS を Rust で作りながら、メモリ管理、割込み、スケジュー�
 | 最初のアーキテクチャ | 決定 | AArch64。QEMU `virt` + TCG で開発を始める |
 | 最初の実用品 | 仮案 | Linux VM を監視し、停止や再起動中も動くネイティブ監視サービス |
 
-名称は `ferro-`（鉄）と `hypervisor` に由来する。鉄と錆を介して Rust を連想させる名前とする。
+名称を `rustyhv` に統一する。
 
 ## 3. 到達目標
 
 最初の統合デモでは、次の動作を一続きで確認する。
 
-1. Ferrovisor が起動し、ネイティブの Rust 監視アプリが周期的に動く。
+1. rustyhv が起動し、ネイティブの Rust 監視アプリが周期的に動く。
 2. 同じ基盤上で、1 vCPU の Linux VM が起動し、シリアルコンソールで操作できる。
 3. Linux 側の負荷が高いときも、監視アプリに CPU 時間が割り当てられる。
 4. Linux ゲストを意図的に panic させても、監視アプリが動き続ける。
@@ -47,12 +47,12 @@ OS を Rust で作りながら、メモリ管理、割込み、スケジュー�
 ```text
   Native Rust application / service       Linux application
                   |                              |
-        Ferrovisor SDK + runtime              Linux guest
+        rustyhv SDK + runtime                 Linux guest
                   |                              |
           syscall / event ABI             virtual devices
                   |                              |
   +---------------+------------------------------+----------+
-  |                    Ferrovisor                          |
+  |                    rustyhv                             |
   | Capability / IPC / event       VM lifecycle / vCPU      |
   | Scheduler / memory / interrupt / timer / minimal driver |
   +--------------------------------------------------------+
@@ -84,7 +84,7 @@ OS を Rust で作りながら、メモリ管理、割込み、スケジュー�
 
 ABI には、操作番号、固定幅の値、ハンドル、バッファの範囲、戻り値、エラー、バージョンを定義する。Rust の参照、trait object、`Future` の内部表現を直接境界へ渡さない。初期は ABI の変更を許容し、変更時は SDK とサンプルを一緒に更新する。
 
-Rust ABI には安定性の保証がないため、公開境界の互換性は Ferrovisor 側で管理する。根拠: [Rust Reference — ABI](https://doc.rust-lang.org/reference/items/external-blocks.html#abi)。
+Rust ABI には安定性の保証がないため、公開境界の互換性は rustyhv 側で管理する。根拠: [Rust Reference — ABI](https://doc.rust-lang.org/reference/items/external-blocks.html#abi)。
 
 ### 5.3 非同期処理
 
@@ -173,7 +173,7 @@ M3 では型と権限のモデルを小さく試し、API 全体の完成を待�
 以下は責務の候補であり、必要になる段階で作成する。最初から空の crate をすべて用意する必要はない。
 
 ```text
-ferrovisor/
+rustyhv/
 ├── DESIGN.md           # 本書
 ├── docs/               # 設計判断、実行手順、検証結果
 ├── kernel/             # 資源管理、スケジューラ、syscall
@@ -188,7 +188,7 @@ ferrovisor/
 └── tools/              # ビルド、起動、検証の補助
 ```
 
-crate 名は必要に応じて `ferrovisor-kernel`、`ferrovisor-abi`、`ferrovisor-runtime` などで統一する。
+crate 名は必要に応じて `rustyhv-kernel`、`rustyhv-abi`、`rustyhv-runtime` などで統一する。
 
 ## 11. 実装と検証の原則
 
@@ -208,7 +208,7 @@ crate 名は必要に応じて `ferrovisor-kernel`、`ferrovisor-abi`、`ferrovi
 
 ## 12. 最初の実装と次に行うこと
 
-最初のステップでは、AArch64 の ELF、スタックと BSS の初期化、PL011 による `Ferrovisor` の出力、待機までを実装した。
+最初のステップでは、AArch64 の ELF、スタックと BSS の初期化、PL011 による `rustyhv` の出力、待機までを実装した。
 
 続くステップで起動時の `CurrentEL` の読み取りと表示を追加し、標準設定で EL2、仮想化を無効にした比較実行で EL1 を確認した。
 

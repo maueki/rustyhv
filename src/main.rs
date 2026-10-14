@@ -67,7 +67,7 @@ extern "C" fn kernel_main() -> ! {
         write_volatile((UART + 0x2c) as *mut u32, line_control); // 8ビット。
         write_volatile((UART + 0x30) as *mut u32, 0x301); // UART・送信・受信を有効化。
     }
-    serial_write(b"Ferrovisor\r\n");
+    serial_write(b"rustyhv\r\n");
     serial_write(b"CurrentEL: EL");
     serial_write(&[b'0' + current_el(), b'\r', b'\n']);
     serial_write(b"Timer frequency (Hz): ");
@@ -216,7 +216,7 @@ fn configure_timer_irq() {
     // SAFETY: 単一CPU、MMU無効、GICv2 の起動設定として呼ぶ。
     // CPU の DAIF はマスク済み。GIC 設定前にタイマーを停止・マスクする。
     // 以下のレジスタオフセットと制御ビットは GICv2 の仕様。
-    // 優先度0x80と優先度マスク0xf0は、Ferrovisor の今回の設定値。
+    // 優先度0x80と優先度マスク0xf0は、rustyhv の今回の設定値。
     unsafe {
         asm!("msr CNTHP_CTL_EL2, {masked}", "isb", masked = in(reg) 2u64,
             options(nostack, preserves_flags));

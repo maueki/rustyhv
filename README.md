@@ -1,4 +1,4 @@
-# Ferrovisor
+# rustyhv
 
 Rust のネイティブアプリと VM が共存する OS／ハイパーバイザーを目指す。
 設計とロードマップは [DESIGN.md](DESIGN.md) を参照。
@@ -38,7 +38,7 @@ QEMU が ELF を直接ロードするため、UEFI や外部ブートローダ�
 TCG を使うため KVM は不要。標準設定の出力例は次の六行。
 
 ```text
-Ferrovisor
+rustyhv
 CurrentEL: EL2
 Timer frequency (Hz): 0x0000000003b9aca0
 GIC version: 0x0000000000000002
@@ -222,15 +222,15 @@ EL2 で初期化し、EL1 に移行して次のプロンプトを表示する。
 `shell` は `el1-test` を有効にするが、整数操作の試験に代えてシェルを実行する。
 
 ```text
-Ferrovisor shell (EL1). Type help.
-ferrovisor> help
+rustyhv shell (EL1). Type help.
+rustyhv> help
 help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
 run hello  Run the built-in Rust app
-ferrovisor> echo hello
+rustyhv> echo hello
 hello
-ferrovisor>
+rustyhv>
 ```
 
 - `help`: コマンド一覧。`info`: 現在の固定構成（EL1 シェル、EL2 コンソール、QEMU virt）を表示。
@@ -264,9 +264,9 @@ python3 tools/test-shell.py --release
 ### 組み込み Rust アプリ
 
 ```text
-ferrovisor> run hello
+rustyhv> run hello
 Hello from app!
-ferrovisor>
+rustyhv>
 ```
 
 `src/apps/hello.rs` がアプリ、`src/app_api.rs` が最小のアプリ用 API。

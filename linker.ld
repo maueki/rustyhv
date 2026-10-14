@@ -3,7 +3,7 @@ ENTRY(_start)
 SECTIONS
 {
     /* QEMU virt 固有: RAM は0x40000000から。現在の起動設定では128 MiB。
-       0x40080000はFerrovisorが選んだ配置先。先頭512 KiBを起動データ用に空ける。
+       0x40080000はrustyhvが選んだ配置先。先頭512 KiBを起動データ用に空ける。
        AArch64の固定入口ではない。QEMUはELFに記録された入口を使用する。 */
     . = 0x40080000;
     .text : ALIGN(16) { KEEP(*(.text.boot)) *(.text .text.*) }
