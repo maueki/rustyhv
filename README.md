@@ -11,6 +11,7 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 `timer-irq-test` feature でタイマー IRQ の受信も確認できる。
 タイマー IRQ からの復帰と、`el1-test` feature で EL2 → EL1 の移行・HVC の往復に対応。
 `shell` feature で EL1 の簡易シェルを起動できる。
+シェルの `run hello` で組み込み Rust アプリを呼び出せる。
 VM の実行、MMU、ヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
@@ -225,6 +226,7 @@ ferrovisor> help
 help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
+run hello  Run the built-in Rust app
 ferrovisor> echo hello
 hello
 ferrovisor>
@@ -232,6 +234,7 @@ ferrovisor>
 
 - `help`: コマンド一覧。`info`: 現在の固定構成（EL1 シェル、EL2 コンソール、QEMU virt）を表示。
 - `echo TEXT`: 引数を表示。先頭と末尾の空白は除き、途中の空白は保持する。
+- `run hello`: 組み込み Rust アプリを実行し、終了後にシェルへ戻る。
 - Enter（CR・LF・CRLF）、Backspace / Delete、Ctrl+C に対応。Ctrl+C は入力行を取り消す。
 - 入力は ASCII の印字文字、最大128バイト。超過した行は Enter 時に全体を破棄する。
 - 空行は何も実行せず、未知のコマンドや不正な引数はメッセージを表示して入力へ戻る。
@@ -256,6 +259,24 @@ python3 tools/test-shell.py --release
 
 実際の Cargo runner 設定で QEMU を起動し、コマンド・行編集・入力上限・復帰・終了キーを検証する。
 1文字入力と20回の起床に加え、Linux の `/proc` で1秒間の待機中に QEMU が使う CPU 時間を検証する。
+
+### 組み込み Rust アプリ
+
+```text
+ferrovisor> run hello
+Hello from app!
+ferrovisor>
+```
+
+`src/apps/hello.rs` がアプリ、`src/app_api.rs` が最小のアプリ用 API。
+アプリは `app_api::write_str()` で出力し、`Result<(), Error>` を返して終了する。
+アプリ側に `unsafe` や UART のアドレス・レジスタ操作は不要。
+アプリの登録と実行は `src/apps/mod.rs` が担当し、未登録の名前や余分な引数はシェルが報告する。
+
+現在はカーネルと一緒にビルドした Rust 関数を EL1 で同期的に呼ぶ。
+シェルと同じメモリ・スタックを使い、アプリの panic や停止はシェルにも影響する。
+外部ファイルからのロード、独立したプロセス、EL0、メモリ保護、アプリ実行中の強制中断は未実装。
+対話テストでは実行・再実行・シェルの再開・不正な名前と引数を debug / release で確認する。
 
 ### 参照
 

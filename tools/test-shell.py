@@ -81,6 +81,13 @@ def main():
             check("empty line", b"\r\n", [b"\r\n"])
             check("unknown command", b"missing\r", [b"Unknown command; type help\r\n"])
             check("invalid arguments", b"info extra\r", [b"This command takes no arguments\r\n"])
+            check("run hello", b"run hello\r", [b"\r\nHello from app!\r\n"])
+            check("shell resumes after app", b"echo app returned\r", [b"\r\napp returned\r\n"])
+            check("run hello again", b"run   hello\r", [b"\r\nHello from app!\r\n"])
+            check("missing app name", b"run\r", [b"Usage: run hello\r\n"])
+            check("unknown app", b"run missing\r", [b"Unknown app; available: hello\r\n"])
+            extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run hello\r\n"])
+            assert b"Hello from app!" not in extra, extra
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])
             assert b"\r\n" + b"x" * 123 + b"\r\n" not in overflow, overflow

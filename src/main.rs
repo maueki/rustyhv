@@ -2,6 +2,10 @@
 #![no_main]
 
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod app_api;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod apps;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod console_wait;
 mod hvc;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
