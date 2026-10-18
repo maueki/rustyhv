@@ -91,10 +91,10 @@ fn execute(line: &str, processes: &mut Manager) -> Result<(), Error> {
     let arguments = arguments.trim_start();
     match command {
         "help" if arguments.is_empty() => hvc::write_str(
-            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run a built-in app (hello, fault)\r\n",
+            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run hello or fault\r\nProtection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
-            "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
+            "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nMemory: EL0 protected, one process at a time\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
         ),
         "echo" => {
             hvc::write_str(arguments)?;
@@ -103,13 +103,13 @@ fn execute(line: &str, processes: &mut Manager) -> Result<(), Error> {
         "run" => {
             let mut names = arguments.split_ascii_whitespace();
             let Some(name) = names.next() else {
-                return hvc::write_str("Usage: run <hello|fault>\r\n");
+                return hvc::write_str("Usage: run NAME (see help)\r\n");
             };
             if names.next().is_some() {
-                return hvc::write_str("Usage: run <hello|fault>\r\n");
+                return hvc::write_str("Usage: run NAME (see help)\r\n");
             }
             let Some(app) = crate::apps::find(name) else {
-                return hvc::write_str("Unknown app; available: hello, fault\r\n");
+                return hvc::write_str("Unknown app; type help\r\n");
             };
             match processes.run(app) {
                 Ok(ExitReason::Code(0)) => Ok(()),

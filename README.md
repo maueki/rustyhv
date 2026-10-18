@@ -12,7 +12,7 @@ Rust のネイティブアプリと VM が共存する OS／ハイパーバイ�
 タイマー IRQ からの復帰と、`el1-test` feature で EL2 → EL1 の移行・HVC の往復に対応。
 `shell` feature で EL1 の簡易シェルを起動できる。
 シェルの `run hello` で組み込み Rust アプリを EL0 で実行できる。
-VM の実行、MMU、ヒープは未実装。
+シェル構成では EL1 の MMU で EL0 を保護する。VM の実行とヒープは未実装。
 UART アドレスはこの QEMU ボード専用の固定値を使う。
 
 ### 準備
@@ -159,7 +159,8 @@ cargo run --features el1-test
 ```
 
 通常の初期化後、EL1 用に確保した別の64 KiBスタックを `SP_EL1` に設定する。
-`HCR_EL2.RW=1` で EL1 を AArch64 とし、`SCTLR_EL1` は MMU・キャッシュを無効にする。
+`HCR_EL2.RW=1` で EL1 を AArch64 とし、移行時は MMU・キャッシュを無効にする。
+シェル構成では EL1 の初期化で Stage 1 MMU を有効にし、キャッシュは無効のまま維持する。
 `ELR_EL2` に EL1 の入口、`SPSR_EL2` に DAIF 全マスク・EL1h を設定し、`eret` で移行する。
 
 ```text
@@ -227,7 +228,9 @@ rustyhv> help
 help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
-run NAME   Run a built-in app (hello, fault)
+ps         Show the last process
+run NAME   Run hello or fault
+Protection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard
 rustyhv> echo hello
 hello
 rustyhv>
@@ -321,10 +324,46 @@ Hello from app!
 rustyhv>
 ```
 
-スタックは別でもメモリは共有するため、アプリによるメモリ破壊は防げない。
-無限ループの強制終了、panic 専用の回収処理、スタックの保護もまだ実装しない。
-外部ファイルからのロード、独立したプロセス、メモリ保護、アプリ実行中の強制中断は未実装。
+OS とユーザーイメージを別々にリンクし、シェル構成では MMU でアクセス権を分ける。
+ユーザーイメージの panic は終了コード255でプロセスを終了する。
+外部ファイルからのロード、ヒープ、アプリ実行中の強制中断、マルチタスクは未実装。
 対話テストでは実行・再実行・シェルの再開・不正な名前と引数を debug / release で確認する。
+
+### 単一プロセスのメモリ保護
+
+`src/memory.rs` が EL1 の Stage 1 MMU を設定する。QEMU virt・RAM 128 MiB・1 CPU 向けの固定配置。
+仮想アドレスと物理アドレスは一致させ、ページのアクセス権を利用する。
+
+| 領域 | EL0 | EL1 |
+|---|---|---|
+| OS のコード・データ・スタック・ページテーブル | アクセス不可 | 利用可能 |
+| ユーザーイメージの有効ページ（0x40200000〜） | 読み取り・実行 | 読み取りのみ、実行禁止 |
+| ユーザースタック（0x40400000〜64 KiB） | 読み書き、実行禁止 | 読み書き、実行禁止 |
+| GIC・UART | アクセス不可 | 操作可能 |
+| ユーザー領域の未使用ページ | 未マップ | 未マップ |
+
+ユーザーイメージの末尾側に1ページを残し、スタック直前の0x403ff000をガードページにする。
+スタックの上側も未マップ。プロセス作成時にスタックをゼロ消去して再利用する。
+専用アドレス空間を並列に切り替える仕組みはまだなく、1つのユーザースロットを順番に利用する。
+ユーザーイメージの読み取り専用コードは組み込みアプリ間で共有する。
+
+```text
+rustyhv> run hello
+Hello from app!
+rustyhv> ps
+PID NAME STATE REASON
+0x0000000000000001 hello Exited code=0x0000000000000000
+rustyhv> run read-kernel
+APP FAULT at EL0
+...
+FAR_EL1: 0x0000000040080000
+App exited with status: 0x0000000000000080
+```
+
+保護確認アプリは `read-kernel`、`write-kernel`、`read-device`、`write-code`、`exec-stack`、`stack-guard`。
+不正アクセスはアボートとして終了し、`ps` に ESR を記録する。各試験後に `hello` が実行できることも確認する。
+これらは意図した命令を発行する検証用アプリで、通常のアプリ API は引き続き安全な Rust 関数を使う。
+マルチタスクは保留。アプリが無限ループした場合、メモリ保護があってもシェルには戻らない。
 
 ### EL1 の例外確認
 

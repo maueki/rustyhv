@@ -9,6 +9,6 @@ SECTIONS
     .data : { *(.data .data.*) } :image
     .bss : { *(.bss .bss.*) *(COMMON) } :image
     ASSERT(SIZEOF(.data) == 0 && SIZEOF(.bss) == 0, "user image must be read-only")
-    ASSERT(. <= 0x40400000, "user image exceeds 2 MiB")
+    ASSERT(. <= 0x403ff000, "user image overlaps stack guard")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) }
 }

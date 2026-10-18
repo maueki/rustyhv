@@ -101,4 +101,15 @@ fn report(heading: &str, vector: u64, esr: u64, elr: u64) {
     hvc::write_str("ELR_EL1: ").expect("console failed");
     hvc::write_bytes(&crate::hex_bytes(elr)).expect("console failed");
     hvc::write_str("\r\n").expect("console failed");
+    if matches!(esr >> 26, 0x20 | 0x21 | 0x24 | 0x25) {
+        let far: u64;
+        // SAFETY: 命令・データアボートの診断として、EL1 の障害アドレスを読む。
+        unsafe {
+            asm!("mrs {far}, FAR_EL1", far = out(reg) far,
+                options(nomem, nostack, preserves_flags));
+        }
+        hvc::write_str("FAR_EL1: ").expect("console failed");
+        hvc::write_bytes(&crate::hex_bytes(far)).expect("console failed");
+        hvc::write_str("\r\n").expect("console failed");
+    }
 }

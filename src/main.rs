@@ -13,6 +13,8 @@ mod el0_image;
 mod el1_exception;
 mod hvc;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod memory;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod process;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod shell;
@@ -154,6 +156,8 @@ extern "C" fn el1_main() -> ! {
     el1_exception::install();
     assert!(current_el() == 1);
     hvc::write_str("CurrentEL: EL1\r\n").expect("console failed");
+    #[cfg(feature = "shell")]
+    memory::enable();
     #[cfg(feature = "el1-exception-test")]
     el1_exception::test();
     #[cfg(feature = "shell")]

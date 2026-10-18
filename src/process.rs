@@ -53,6 +53,7 @@ impl Manager {
             state: State::Ready,
         });
         let process = self.last.as_mut().expect("created process");
+        crate::memory::reset_stack();
         process.state = State::Running;
         // CPU コンテキストは el0.S が EL1 スタックに保存し、終了時に復元する。
         let result = el0::run(app.selector);

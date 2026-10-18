@@ -102,12 +102,28 @@ def main():
                 check("repeated EL0 fault", b"run fault\r", [b"App exited with status: 0x0000000000000080\r\n" + prompt], verbose=False)
                 check("hello after repeated fault", b"run hello\r", [app_return], verbose=False)
             print("PASS: 10 faults alternating with successful apps", flush=True)
-            check("missing app name", b"run\r", [b"Usage: run <hello|fault>\r\n"])
-            check("unknown app", b"run missing\r", [b"Unknown app; available: hello, fault\r\n"])
-            extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run <hello|fault>\r\n"])
+            check("missing app name", b"run\r", [b"Usage: run NAME (see help)\r\n"])
+            check("unknown app", b"run missing\r", [b"Unknown app; type help\r\n"])
+            extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run NAME (see help)\r\n"])
             assert b"Hello from app!" not in extra, extra
             check("invalid spawn does not consume PID", b"ps\r", [b"0x000000000000002c hello Exited code=0x0000000000000000\r\n"])
             check("ps rejects arguments", b"ps extra\r", [b"This command takes no arguments\r\n"])
+            for app, syndrome, address in [
+                ("read-kernel", b"000000009200000e", b"0000000040080000"),
+                ("write-code", b"000000009200004f", b"0000000040200000"),
+                ("exec-stack", b"000000008200000f", b"0000000040400000"),
+                ("write-kernel", b"000000009200004e", b"0000000040080000"),
+                ("read-device", b"000000009200000e", b"0000000009000000"),
+                ("stack-guard", b"0000000092000047", b"00000000403ff000"),
+            ]:
+                check(app + " denied", ("run " + app + "\r").encode(), [
+                    b"APP FAULT at EL0\r\n", b"ESR_EL1: 0x" + syndrome + b"\r\n",
+                    b"FAR_EL1: 0x" + address + b"\r\n",
+                    b"App exited with status: 0x0000000000000080\r\n" + prompt,
+                ])
+                check("record protection fault", b"ps\r", [app.encode() + b" Exited fault=0x" + syndrome + b"\r\n"])
+                check("hello after protection fault", b"run hello\r", [app_return])
+
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])
             assert b"\r\n" + b"x" * 123 + b"\r\n" not in overflow, overflow
