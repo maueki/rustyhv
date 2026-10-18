@@ -28,7 +28,12 @@ SECTIONS
         . += 64K;
         __el1_stack_top = .;
     }
-    .el0_stack (NOLOAD) : ALIGN(16)
+    ASSERT(. <= 0x40200000, "kernel exceeds private 2 MiB region")
+    . = 0x40200000;
+    .user_image : ALIGN(4096) { KEEP(*(.user_image)) }
+    ASSERT(. <= 0x40400000, "user image exceeds 2 MiB region")
+    . = 0x40400000;
+    .el0_stack (NOLOAD) : ALIGN(4096)
     {
         /* 組み込みアプリ用の64 KiB。EL1 のシェルとは別のスタックを使う。 */
         . += 64K;

@@ -1,6 +1,7 @@
 .section .text.el0, "ax"
 .global run_el0
 run_el0:
+    mov x3, x2 // ユーザーイメージ内のアプリ選択値を退避する。
     // C 呼び出し規約で保持する x19〜x30 と DAIF を、EL1 のスタックへ保存する。
     sub sp, sp, #112
     stp x19, x20, [sp, #0]
@@ -17,6 +18,7 @@ run_el0:
     // DAIF 全マスク・EL0t（SP_EL0 使用）。AArch64 の仕様。
     mov x2, #0x3c0
     msr SPSR_EL1, x2
+    mov x0, x3 // EL0 の入口の第1引数。
     isb
     eret
 

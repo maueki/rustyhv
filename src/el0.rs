@@ -20,12 +20,17 @@ pub(super) fn exit_address() -> u64 {
     el1_app_exit as *const () as u64
 }
 
-pub(super) fn run(entry: extern "C" fn() -> !) -> Outcome {
+pub(super) fn run(selector: u64) -> Outcome {
     unsafe extern "C" {
-        fn run_el0(entry: extern "C" fn() -> !, stack: *const u8) -> Outcome;
-        static __el0_stack_top: u8;
+        fn run_el0(entry: usize, stack: usize, selector: u64) -> Outcome;
     }
     // SAFETY: シェルの EL1h から同期的に呼ぶ。EL1 のベクタは設置済み。
     // 専用スタックは16バイト境界。終了 SVC または同期例外で、呼び出し元の SP・callee-saved レジスタを戻す。
-    unsafe { run_el0(entry, core::ptr::addr_of!(__el0_stack_top)) }
+    unsafe {
+        run_el0(
+            crate::el0_image::ENTRY,
+            crate::el0_image::STACK_BASE + crate::el0_image::STACK_SIZE,
+            selector,
+        )
+    }
 }

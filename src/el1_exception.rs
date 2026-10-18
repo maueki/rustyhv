@@ -48,7 +48,8 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
                 return crate::el0::exit_address();
             }
             match frame.registers[0] {
-                crate::app_api::WRITE_BYTE => {
+                crate::svc_abi::WRITE_BYTE => {
+                    // SVC の1バイト出力。
                     let status = match u8::try_from(frame.registers[1]) {
                         Ok(byte) => match hvc::write_bytes(&[byte]) {
                             Ok(()) => 0,
@@ -59,7 +60,8 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
                     frame.registers[0] = status;
                     frame.registers[1] = 0;
                 }
-                crate::app_api::EXIT => {
+                crate::svc_abi::EXIT => {
+                    // SVC の終了要求。
                     // 終了コードを保存し、eret ではなく EL1 の呼び出し元へ戻す。
                     frame.registers[0] = frame.registers[1];
                     frame.registers[1] = 0; // 通常終了。終了コード128でも例外とは区別する。

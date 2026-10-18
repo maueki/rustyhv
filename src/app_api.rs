@@ -1,8 +1,7 @@
 use core::arch::asm;
 
 // 組み込み EL0 アプリの試験用 SVC 規約。整数だけを渡し、ポインタは渡さない。
-pub(super) const WRITE_BYTE: u64 = 1;
-pub(super) const EXIT: u64 = 2;
+use crate::svc_abi::{EXIT, WRITE_BYTE};
 
 #[derive(Debug)]
 pub(crate) struct Error(pub(crate) u64);

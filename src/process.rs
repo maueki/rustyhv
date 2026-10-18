@@ -55,7 +55,7 @@ impl Manager {
         let process = self.last.as_mut().expect("created process");
         process.state = State::Running;
         // CPU コンテキストは el0.S が EL1 スタックに保存し、終了時に復元する。
-        let result = el0::run(app.entry);
+        let result = el0::run(app.selector);
         let reason = if result.reason & el0::FAULT_BIT != 0 {
             ExitReason::Fault {
                 esr: result.reason & !el0::FAULT_BIT,

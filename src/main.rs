@@ -2,13 +2,13 @@
 #![no_main]
 
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
-mod app_api;
-#[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod apps;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod console_wait;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod el0;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod el0_image;
 #[cfg(all(feature = "el1-test", not(feature = "exception-test")))]
 mod el1_exception;
 mod hvc;
@@ -16,6 +16,8 @@ mod hvc;
 mod process;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod shell;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod svc_abi;
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
