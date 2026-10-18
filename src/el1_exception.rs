@@ -33,39 +33,53 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
             options(nomem, nostack, preserves_flags));
     }
     #[cfg(feature = "shell")]
-    if vector == 8 && esr >> 26 == 0x15 && esr & 0xffff == 0 {
+    if vector == 8 {
         assert!(!frame.is_null());
         // SAFETY: 下位 EL の同期例外入口が272バイトの保存領域を渡す。
-        // ネストする HVC は EL2 の別スタックを使い、この領域の参照は SVC 復帰前に終了する。
+        // ネストする HVC は EL2 の別スタックを使い、この領域の参照は例外復帰・アプリ終了前に終了する。
         let frame = unsafe { &mut *frame };
-        assert!(frame.spsr & 0xf == 0); // EL0t からの SVC だけを扱う。
-        match frame.registers[0] {
-            crate::app_api::WRITE_BYTE => {
-                let status = match u8::try_from(frame.registers[1]) {
-                    Ok(byte) => match hvc::write_bytes(&[byte]) {
-                        Ok(()) => 0,
-                        Err(_) => 3, // コンソール出力エラー。
-                    },
-                    Err(_) => 2, // 不正引数。
-                };
-                frame.registers[0] = status;
-                frame.registers[1] = 0;
-            }
-            crate::app_api::EXIT => {
-                // 終了コードを保存し、eret ではなく EL1 の呼び出し元へ戻す。
-                frame.registers[0] = frame.registers[1];
+        // EL0t からの同期例外だけをアプリの障害として回収する。
+        // EL1 自身の例外にはこの復帰経路を使わない。
+        if frame.spsr & 0xf == 0 {
+            if esr >> 26 != 0x15 || esr & 0xffff != 0 {
+                report("APP FAULT at EL0\r\n", vector, esr, elr);
+                frame.registers[0] = crate::el0::FAULT_STATUS;
                 return crate::el0::exit_address();
             }
-            _ => {
-                frame.registers[0] = 1; // 未対応の操作。
-                frame.registers[1] = 0;
+            match frame.registers[0] {
+                crate::app_api::WRITE_BYTE => {
+                    let status = match u8::try_from(frame.registers[1]) {
+                        Ok(byte) => match hvc::write_bytes(&[byte]) {
+                            Ok(()) => 0,
+                            Err(_) => 3, // コンソール出力エラー。
+                        },
+                        Err(_) => 2, // 不正引数。
+                    };
+                    frame.registers[0] = status;
+                    frame.registers[1] = 0;
+                }
+                crate::app_api::EXIT => {
+                    // 終了コードを保存し、eret ではなく EL1 の呼び出し元へ戻す。
+                    frame.registers[0] = frame.registers[1];
+                    return crate::el0::exit_address();
+                }
+                _ => {
+                    frame.registers[0] = 1; // 未対応の操作。
+                    frame.registers[1] = 0;
+                }
             }
+            return 0; // SVC の次の命令へ eret で戻る。
         }
-        return 0; // SVC の次の命令へ eret で戻る。
     }
     #[cfg(not(feature = "shell"))]
     let _ = frame;
-    hvc::write_str("EXCEPTION at EL1\r\nVector offset: ").expect("console failed");
+    report("EXCEPTION at EL1\r\n", vector, esr, elr);
+    crate::halt()
+}
+
+fn report(heading: &str, vector: u64, esr: u64, elr: u64) {
+    hvc::write_str(heading).expect("console failed");
+    hvc::write_str("Vector offset: ").expect("console failed");
     hvc::write_bytes(&crate::hex_bytes(vector * 128)).expect("console failed");
     hvc::write_str("\r\nKind: ").expect("console failed");
     hvc::write_str(match vector & 3 {
@@ -83,5 +97,4 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
     hvc::write_str("ELR_EL1: ").expect("console failed");
     hvc::write_bytes(&crate::hex_bytes(elr)).expect("console failed");
     hvc::write_str("\r\n").expect("console failed");
-    crate::halt()
 }

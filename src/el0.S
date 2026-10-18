@@ -22,7 +22,7 @@ run_el0:
 
 .global el1_app_exit
 el1_app_exit:
-    // 終了 SVC のフレームを解放し、x0 に終了コードを取り出す。
+    // EL0 の例外フレームを解放し、x0 に終了コードを取り出す。
     ldr x0, [sp, #0]
     add sp, sp, #272
     ldr x2, [sp, #96]

@@ -88,9 +88,20 @@ def main():
             for _ in range(20):
                 check("repeated EL0 app", b"run hello\r", [app_return], verbose=False)
             print("PASS: 20 EL0 app exits and shell returns", flush=True)
-            check("missing app name", b"run\r", [b"Usage: run hello\r\n"])
-            check("unknown app", b"run missing\r", [b"Unknown app; available: hello\r\n"])
-            extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run hello\r\n"])
+            fault = check("EL0 fault returns to shell", b"run fault\r", [
+                b"APP FAULT at EL0\r\nVector offset: 0x0000000000000400\r\nKind: Synchronous\r\n",
+                b"ESR_EL1: 0x00000000f2000000\r\n",
+                b"App exited with status: 0x0000000000000080\r\n" + prompt,
+            ])
+            assert b"EXCEPTION at EL1" not in fault, fault
+            check("hello after fault", b"run hello\r", [app_return])
+            for _ in range(10):
+                check("repeated EL0 fault", b"run fault\r", [b"App exited with status: 0x0000000000000080\r\n" + prompt], verbose=False)
+                check("hello after repeated fault", b"run hello\r", [app_return], verbose=False)
+            print("PASS: 10 faults alternating with successful apps", flush=True)
+            check("missing app name", b"run\r", [b"Usage: run <hello|fault>\r\n"])
+            check("unknown app", b"run missing\r", [b"Unknown app; available: hello, fault\r\n"])
+            extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run <hello|fault>\r\n"])
             assert b"Hello from app!" not in extra, extra
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])

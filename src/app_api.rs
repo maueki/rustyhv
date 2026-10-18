@@ -29,3 +29,9 @@ pub(super) fn exit(status: u64) -> ! {
         asm!("svc #0", in("x0") EXIT, in("x1") status, options(noreturn, nostack));
     }
 }
+
+pub(crate) fn abort() -> ! {
+    // SAFETY: 初期化済みの EL0 アプリで意図的に同期例外を発生させる。
+    // EL1 が保存したシェルの状態へ戻すため、アプリの実行は再開しない。
+    unsafe { asm!("brk #0", options(noreturn)) };
+}

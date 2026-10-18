@@ -227,7 +227,7 @@ rustyhv> help
 help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
-run hello  Run the built-in Rust app
+run NAME   Run a built-in app (hello, fault)
 rustyhv> echo hello
 hello
 rustyhv>
@@ -236,6 +236,7 @@ rustyhv>
 - `help`: コマンド一覧。`info`: 現在の固定構成（EL1 シェル、EL2 コンソール、QEMU virt）を表示。
 - `echo TEXT`: 引数を表示。先頭と末尾の空白は除き、途中の空白は保持する。
 - `run hello`: 組み込み Rust アプリを実行し、終了後にシェルへ戻る。
+- `run fault`: EL0 で意図的に BRK 例外を起こし、診断後にシェルへ戻る。
 - Enter（CR・LF・CRLF）、Backspace / Delete、Ctrl+C に対応。Ctrl+C は入力行を取り消す。
 - 入力は ASCII の印字文字、最大128バイト。超過した行は Enter 時に全体を破棄する。
 - 空行は何も実行せず、未知のコマンドや不正な引数はメッセージを表示して入力へ戻る。
@@ -289,7 +290,25 @@ SVC ハンドラーは保存された SPSR が EL0t を示すことを検証す�
 
 出力の状態は0: 成功、1: 未対応操作、2: 不正引数、3: コンソールエラー。
 SVC の即値・番号・状態は今回決めた取り決め。FP/SIMD の保存はまだ含めない。
-スタックは別でもメモリは共有し、アプリの panic や停止はシェルにも影響する。
+EL0 の同期例外は原因を表示してアプリを終了し、シェルに復帰する。
+`run fault` は安全な `app_api::abort()` で BRK を起こす確認用アプリ。アプリ側に直接の `unsafe` は不要。
+例外終了コード128（0x80）を予約し、EL1 自身の例外は従来どおり停止する。
+
+```text
+rustyhv> run fault
+APP FAULT at EL0
+Vector offset: 0x0000000000000400
+Kind: Synchronous
+ESR_EL1: 0x00000000f2000000
+ELR_EL1: ...
+App exited with status: 0x0000000000000080
+rustyhv> run hello
+Hello from app!
+rustyhv>
+```
+
+スタックは別でもメモリは共有するため、アプリによるメモリ破壊は防げない。
+無限ループの強制終了、panic 専用の回収処理、スタックの保護もまだ実装しない。
 外部ファイルからのロード、独立したプロセス、メモリ保護、アプリ実行中の強制中断は未実装。
 対話テストでは実行・再実行・シェルの再開・不正な名前と引数を debug / release で確認する。
 
@@ -314,7 +333,7 @@ ELR_EL1: ...
 `src/el1_vectors.S` に AArch64 仕様のベクタ表を置き、`src/el1_exception.rs` で設置と診断を行う。
 下位 EL の AArch64 同期例外入口では CPU 状態を保存し、EL0 の SVC を処理する。
 出力 SVC はレジスタと ELR_EL1・SPSR_EL1 を復元して EL0 へ戻り、終了 SVC はシェルへ戻す。
-未対応の例外は致命的で、HVC 経由で原因を表示して停止する。
+EL0 の同期例外は診断後にアプリを終了する。EL1 自身やその他の未対応例外は原因を表示して停止する。
 `exception-test` も指定した場合は従来の EL2 BRK を優先し、EL1 へ移行しない。
 
 ### 参照

@@ -1,3 +1,4 @@
+mod fault;
 mod hello;
 
 pub(super) enum RunError {
@@ -6,13 +7,15 @@ pub(super) enum RunError {
 }
 
 pub(super) fn run(name: &str) -> Result<(), RunError> {
-    // 組み込みアプリを EL0 で同期的に実行する。終了 SVC でシェルを再開する。
-    match name {
-        "hello" => match crate::el0::run(hello_entry) {
-            0 => Ok(()),
-            status => Err(RunError::ExitStatus(status)),
-        },
-        _ => Err(RunError::NotFound),
+    // 組み込みアプリを EL0 で実行し、終了 SVC または同期例外でシェルを再開する。
+    let entry = match name {
+        "hello" => hello_entry,
+        "fault" => fault::run,
+        _ => return Err(RunError::NotFound),
+    };
+    match crate::el0::run(entry) {
+        0 => Ok(()),
+        status => Err(RunError::ExitStatus(status)),
     }
 }
 

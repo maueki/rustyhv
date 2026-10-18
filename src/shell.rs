@@ -86,7 +86,7 @@ fn execute(line: &str) -> Result<(), Error> {
     let arguments = arguments.trim_start();
     match command {
         "help" if arguments.is_empty() => hvc::write_str(
-            "help       Show commands\r\ninfo       Show system information\r\necho TEXT  Print TEXT\r\nrun hello  Run the built-in Rust app\r\n",
+            "help       Show commands\r\ninfo       Show system information\r\necho TEXT  Print TEXT\r\nrun NAME   Run a built-in app (hello, fault)\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
             "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
@@ -98,15 +98,15 @@ fn execute(line: &str) -> Result<(), Error> {
         "run" => {
             let mut names = arguments.split_ascii_whitespace();
             let Some(name) = names.next() else {
-                return hvc::write_str("Usage: run hello\r\n");
+                return hvc::write_str("Usage: run <hello|fault>\r\n");
             };
             if names.next().is_some() {
-                return hvc::write_str("Usage: run hello\r\n");
+                return hvc::write_str("Usage: run <hello|fault>\r\n");
             }
             match crate::apps::run(name) {
                 Ok(()) => Ok(()),
                 Err(crate::apps::RunError::NotFound) => {
-                    hvc::write_str("Unknown app; available: hello\r\n")
+                    hvc::write_str("Unknown app; available: hello, fault\r\n")
                 }
                 Err(crate::apps::RunError::ExitStatus(status)) => {
                     hvc::write_str("App exited with status: ")?;
