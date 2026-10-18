@@ -13,6 +13,8 @@ mod el0;
 mod el1_exception;
 mod hvc;
 #[cfg(all(feature = "shell", not(feature = "exception-test")))]
+mod process;
+#[cfg(all(feature = "shell", not(feature = "exception-test")))]
 mod shell;
 
 use core::arch::{asm, global_asm};

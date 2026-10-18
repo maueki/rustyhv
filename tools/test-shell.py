@@ -81,8 +81,10 @@ def main():
             check("empty line", b"\r\n", [b"\r\n"])
             check("unknown command", b"missing\r", [b"Unknown command; type help\r\n"])
             check("invalid arguments", b"info extra\r", [b"This command takes no arguments\r\n"])
+            check("ps before spawn", b"ps\r", [b"No processes\r\n"])
             app_return = b"\r\nHello from app!\r\n" + prompt
             check("run hello at EL0", b"run hello\r", [app_return])
+            check("normal process record", b"ps\r", [b"0x0000000000000001 hello Exited code=0x0000000000000000\r\n"])
             check("shell resumes after app", b"echo app returned\r", [b"\r\napp returned\r\n"])
             check("run hello again", b"run   hello\r", [app_return])
             for _ in range(20):
@@ -94,6 +96,7 @@ def main():
                 b"App exited with status: 0x0000000000000080\r\n" + prompt,
             ])
             assert b"EXCEPTION at EL1" not in fault, fault
+            check("fault process record", b"ps\r", [b"0x0000000000000017 fault Exited fault=0x00000000f2000000\r\n"])
             check("hello after fault", b"run hello\r", [app_return])
             for _ in range(10):
                 check("repeated EL0 fault", b"run fault\r", [b"App exited with status: 0x0000000000000080\r\n" + prompt], verbose=False)
@@ -103,6 +106,8 @@ def main():
             check("unknown app", b"run missing\r", [b"Unknown app; available: hello, fault\r\n"])
             extra = check("extra app arguments", b"run hello extra\r", [b"Usage: run <hello|fault>\r\n"])
             assert b"Hello from app!" not in extra, extra
+            check("invalid spawn does not consume PID", b"ps\r", [b"0x000000000000002c hello Exited code=0x0000000000000000\r\n"])
+            check("ps rejects arguments", b"ps extra\r", [b"This command takes no arguments\r\n"])
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])
             assert b"\r\n" + b"x" * 123 + b"\r\n" not in overflow, overflow

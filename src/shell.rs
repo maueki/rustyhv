@@ -1,4 +1,5 @@
 use crate::hvc::{self, Error};
+use crate::process::{ExitReason, Manager, State};
 
 const PROMPT: &str = "rustyhv> ";
 const LINE_CAPACITY: usize = 128;
@@ -6,6 +7,7 @@ const LINE_CAPACITY: usize = 128;
 pub(super) fn run() -> Result<(), Error> {
     hvc::write_str("rustyhv shell (EL1). Type help.\r\n")?;
     hvc::write_str(PROMPT)?;
+    let mut processes = Manager::new();
     let mut line = [0u8; LINE_CAPACITY];
     let mut length = 0;
     let mut overflow = false;
@@ -40,7 +42,10 @@ pub(super) fn run() -> Result<(), Error> {
                     hvc::write_str("Line too long (max 128 bytes); discarded\r\n")?;
                 } else {
                     // 入力は ASCII のみ受け付けるので UTF-8 として常に有効。
-                    execute(core::str::from_utf8(&line[..length]).expect("ASCII line"))?;
+                    execute(
+                        core::str::from_utf8(&line[..length]).expect("ASCII line"),
+                        &mut processes,
+                    )?;
                 }
                 length = 0;
                 overflow = false;
@@ -77,7 +82,7 @@ pub(super) fn run() -> Result<(), Error> {
     }
 }
 
-fn execute(line: &str) -> Result<(), Error> {
+fn execute(line: &str, processes: &mut Manager) -> Result<(), Error> {
     let line = line.trim();
     if line.is_empty() {
         return Ok(());
@@ -86,7 +91,7 @@ fn execute(line: &str) -> Result<(), Error> {
     let arguments = arguments.trim_start();
     match command {
         "help" if arguments.is_empty() => hvc::write_str(
-            "help       Show commands\r\ninfo       Show system information\r\necho TEXT  Print TEXT\r\nrun NAME   Run a built-in app (hello, fault)\r\n",
+            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run a built-in app (hello, fault)\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
             "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",
@@ -103,19 +108,48 @@ fn execute(line: &str) -> Result<(), Error> {
             if names.next().is_some() {
                 return hvc::write_str("Usage: run <hello|fault>\r\n");
             }
-            match crate::apps::run(name) {
-                Ok(()) => Ok(()),
-                Err(crate::apps::RunError::NotFound) => {
-                    hvc::write_str("Unknown app; available: hello, fault\r\n")
-                }
-                Err(crate::apps::RunError::ExitStatus(status)) => {
+            let Some(app) = crate::apps::find(name) else {
+                return hvc::write_str("Unknown app; available: hello, fault\r\n");
+            };
+            match processes.run(app) {
+                Ok(ExitReason::Code(0)) => Ok(()),
+                Ok(reason) => {
+                    let status = match reason {
+                        ExitReason::Code(status) => status,
+                        ExitReason::Fault { .. } => crate::el0::FAULT_STATUS,
+                    };
                     hvc::write_str("App exited with status: ")?;
                     hvc::write_bytes(&crate::hex_bytes(status))?;
                     hvc::write_str("\r\n")
                 }
+                Err(message) => hvc::write_str(message),
             }
         }
-        "help" | "info" => hvc::write_str("This command takes no arguments\r\n"),
+        "ps" if arguments.is_empty() => show_process(processes),
+        "help" | "info" | "ps" => hvc::write_str("This command takes no arguments\r\n"),
         _ => hvc::write_str("Unknown command; type help\r\n"),
+    }
+}
+
+fn show_process(processes: &Manager) -> Result<(), Error> {
+    let Some(process) = processes.last() else {
+        return hvc::write_str("No processes\r\n");
+    };
+    hvc::write_str("PID NAME STATE REASON\r\n")?;
+    hvc::write_bytes(&crate::hex_bytes(process.pid))?;
+    hvc::write_str(" ")?;
+    hvc::write_str(process.name)?;
+    match process.state {
+        State::Ready => hvc::write_str(" Ready -\r\n"),
+        State::Running => hvc::write_str(" Running -\r\n"),
+        State::Exited(reason) => {
+            let (label, value) = match reason {
+                ExitReason::Code(code) => (" Exited code=", code),
+                ExitReason::Fault { esr } => (" Exited fault=", esr),
+            };
+            hvc::write_str(label)?;
+            hvc::write_bytes(&crate::hex_bytes(value))?;
+            hvc::write_str("\r\n")
+        }
     }
 }

@@ -44,6 +44,7 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
             if esr >> 26 != 0x15 || esr & 0xffff != 0 {
                 report("APP FAULT at EL0\r\n", vector, esr, elr);
                 frame.registers[0] = crate::el0::FAULT_STATUS;
+                frame.registers[1] = crate::el0::FAULT_BIT | esr;
                 return crate::el0::exit_address();
             }
             match frame.registers[0] {
@@ -61,6 +62,7 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
                 crate::app_api::EXIT => {
                     // 終了コードを保存し、eret ではなく EL1 の呼び出し元へ戻す。
                     frame.registers[0] = frame.registers[1];
+                    frame.registers[1] = 0; // 通常終了。終了コード128でも例外とは区別する。
                     return crate::el0::exit_address();
                 }
                 _ => {
