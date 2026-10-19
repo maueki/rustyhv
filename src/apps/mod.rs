@@ -37,6 +37,18 @@ pub(super) fn find(name: &str) -> Option<App> {
             name: "stack-guard",
             selector: 7,
         }),
+        "globals" => Some(App {
+            name: "globals",
+            selector: 8,
+        }),
+        "globals-fault" => Some(App {
+            name: "globals-fault",
+            selector: 9,
+        }),
+        "exec-data" => Some(App {
+            name: "exec-data",
+            selector: 10,
+        }),
         _ => None,
     }
 }

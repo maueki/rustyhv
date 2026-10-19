@@ -115,6 +115,7 @@ def main():
                 ("write-kernel", b"000000009200004e", b"0000000040080000"),
                 ("read-device", b"000000009200000e", b"0000000009000000"),
                 ("stack-guard", b"0000000092000047", b"00000000403ff000"),
+                ("exec-data", b"000000008200000f", b"0000000040600000"),
             ]:
                 check(app + " denied", ("run " + app + "\r").encode(), [
                     b"APP FAULT at EL0\r\n", b"ESR_EL1: 0x" + syndrome + b"\r\n",
@@ -123,6 +124,15 @@ def main():
                 ])
                 check("record protection fault", b"ps\r", [app.encode() + b" Exited fault=0x" + syndrome + b"\r\n"])
                 check("hello after protection fault", b"run hello\r", [app_return])
+            globals_output = (b"Globals initialized: data=41 bss=0\r\n"
+                              b"Globals changed: data=42 bss=1\r\n")
+            for _ in range(2):
+                check("data/bss reset on spawn", b"run globals\r", [globals_output + prompt])
+            check("globals fault after mutation", b"run globals-fault\r", [
+                globals_output + b"APP FAULT at EL0\r\n",
+                b"App exited with status: 0x0000000000000080\r\n" + prompt,
+            ])
+            check("data/bss reset after fault", b"run globals\r", [globals_output + prompt])
 
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])

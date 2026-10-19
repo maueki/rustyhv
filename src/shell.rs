@@ -91,7 +91,7 @@ fn execute(line: &str, processes: &mut Manager) -> Result<(), Error> {
     let arguments = arguments.trim_start();
     match command {
         "help" if arguments.is_empty() => hvc::write_str(
-            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run hello or fault\r\nProtection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard\r\n",
+            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run hello, fault, globals, globals-fault\r\nProtection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard, exec-data\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
             "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nMemory: EL0 protected, one process at a time\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",

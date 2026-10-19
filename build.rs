@@ -7,6 +7,7 @@ fn main() {
         "src/app_api.rs",
         "src/apps/hello.rs",
         "src/apps/fault.rs",
+        "src/apps/globals.rs",
         "src/svc_abi.rs",
     ] {
         println!("cargo:rerun-if-changed={file}");
@@ -53,6 +54,8 @@ fn build_user_image() {
     let base = 0x4020_0000usize;
     assert_eq!(u64_at(24), base, "unexpected user entry");
     let mut image = Vec::new();
+    let mut data = Vec::new();
+    let mut data_memory_size = 0;
     // 自分でリンクした ELF の PT_LOAD だけを取り出し、固定配置のバイナリにする。
     for index in 0..u16_at(56) {
         let header = u64_at(32) + index * u16_at(54);
@@ -62,11 +65,17 @@ fn build_user_image() {
         let offset = u64_at(header + 8);
         let address = u64_at(header + 16);
         let size = u64_at(header + 32);
-        assert_eq!(
-            size,
-            u64_at(header + 40),
-            "user image has writable zero-fill data"
-        );
+        let memory_size = u64_at(header + 40);
+        let flags = u32::from_le_bytes(elf[header + 4..header + 8].try_into().unwrap());
+        assert!(size <= memory_size);
+        if flags & 2 != 0 {
+            assert_eq!(address, 0x4060_0000);
+            assert!(memory_size <= 64 * 1024 && data_memory_size == 0);
+            data.extend_from_slice(&elf[offset..offset + size]);
+            data_memory_size = memory_size;
+            continue;
+        }
+        assert_eq!(size, memory_size, "read-only image has zero-fill data");
         assert!(address >= base && address + size <= base + 0x20_0000);
         let start = address - base;
         image.resize(image.len().max(start + size), 0);
@@ -74,4 +83,10 @@ fn build_user_image() {
     }
     assert!(!image.is_empty());
     fs::write(out.join("user.bin"), image).expect("write user image");
+    fs::write(out.join("user_data.bin"), data).expect("write user data template");
+    fs::write(
+        out.join("user_layout.rs"),
+        format!("pub(super) const DATA_MEMORY_SIZE: usize = {data_memory_size};\n"),
+    )
+    .expect("write user layout");
 }

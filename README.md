@@ -229,8 +229,8 @@ help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
 ps         Show the last process
-run NAME   Run hello or fault
-Protection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard
+run NAME   Run hello, fault, globals, globals-fault
+Protection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard, exec-data
 rustyhv> echo hello
 hello
 rustyhv>
@@ -286,7 +286,10 @@ rustyhv>
 `build.rs` が `user/main.rs` を OS と別にビルドし、読み取り専用のユーザーイメージを組み込む。
 OS の debug / release にかかわらず、ユーザーイメージは最適化レベル2でビルドする。
 入口は0x40200000、スタックは0x40400000から64 KiB。固定配置は QEMU virt 向けの今回の選択。
-可変のグローバルデータや BSS はまだサポートせず、ユーザーリンカが存在しないことを検証する。
+書き込み可能な `.data` と `.bss` は0x40600000からの64 KiBに配置する。
+起動前に領域全体をゼロにし、OS が保持する `.data` の初期値だけをコピーする。
+`run globals` は初期値を検証して書き換え、`run globals-fault` は書き換え後に例外で終了する。
+どちらの終了後も、次の起動で `.data`・`.bss` が初期状態に戻る。
 アプリは `app_api::write_str()` で出力し、`Result<(), Error>` を返す。
 起動用の入口が結果を終了 SVC に渡す。成功は終了コード0、出力エラーはその状態コードで終了する。
 アプリ側に `unsafe` や UART のアドレス・レジスタ操作は不要。
@@ -339,6 +342,7 @@ OS とユーザーイメージを別々にリンクし、シェル構成では M
 | OS のコード・データ・スタック・ページテーブル | アクセス不可 | 利用可能 |
 | ユーザーイメージの有効ページ（0x40200000〜） | 読み取り・実行 | 読み取りのみ、実行禁止 |
 | ユーザースタック（0x40400000〜64 KiB） | 読み書き、実行禁止 | 読み書き、実行禁止 |
+| ユーザーデータ・BSS（0x40600000〜64 KiB） | 読み書き、実行禁止 | 読み書き、実行禁止 |
 | GIC・UART | アクセス不可 | 操作可能 |
 | ユーザー領域の未使用ページ | 未マップ | 未マップ |
 
@@ -360,7 +364,7 @@ FAR_EL1: 0x0000000040080000
 App exited with status: 0x0000000000000080
 ```
 
-保護確認アプリは `read-kernel`、`write-kernel`、`read-device`、`write-code`、`exec-stack`、`stack-guard`。
+保護確認アプリは `read-kernel`、`write-kernel`、`read-device`、`write-code`、`exec-stack`、`stack-guard`、`exec-data`。
 不正アクセスはアボートとして終了し、`ps` に ESR を記録する。各試験後に `hello` が実行できることも確認する。
 これらは意図した命令を発行する検証用アプリで、通常のアプリ API は引き続き安全な Rust 関数を使う。
 マルチタスクは保留。アプリが無限ループした場合、メモリ保護があってもシェルには戻らない。

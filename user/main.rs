@@ -5,6 +5,8 @@
 mod app_api;
 #[path = "../src/apps/fault.rs"]
 mod fault;
+#[path = "../src/apps/globals.rs"]
+mod globals;
 #[path = "../src/apps/hello.rs"]
 mod hello;
 #[path = "../src/svc_abi.rs"]
@@ -66,6 +68,23 @@ extern "C" fn user_entry(selector: u64) -> ! {
                     address = in(reg) 0x403f_f000u64, options(nostack, preserves_flags));
             }
             0
+        }
+        8 => match globals::run() {
+            Ok(()) => 0,
+            Err(error) => error.0,
+        },
+        9 => {
+            if let Err(error) = globals::run() {
+                app_api::exit(error.0);
+            }
+            app_api::abort()
+        }
+        10 => {
+            // 保護検証用。書き込み可能なデータ領域からの実行は禁止する。
+            unsafe {
+                core::arch::asm!("br {address}", address = in(reg) 0x4060_0000u64,
+                    options(noreturn, nostack));
+            }
         }
         _ => 1,
     };

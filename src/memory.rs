@@ -19,6 +19,7 @@ static mut LOW: Table = Table([0; 512]);
 static mut RAM_TABLE: Table = Table([0; 512]);
 static mut IMAGE: Table = Table([0; 512]);
 static mut STACK: Table = Table([0; 512]);
+static mut DATA: Table = Table([0; 512]);
 
 pub(super) fn enable() {
     let control: u64;
@@ -33,6 +34,7 @@ pub(super) fn enable() {
     let ram = ptr::addr_of_mut!(RAM_TABLE);
     let image = ptr::addr_of_mut!(IMAGE);
     let stack = ptr::addr_of_mut!(STACK);
+    let data = ptr::addr_of_mut!(DATA);
     // SAFETY: 例外はマスク済み、まだページテーブルを使う CPU は存在しない。
     // 各表は4096バイト境界。現在の仮想アドレスと物理アドレスは一致する。
     unsafe {
@@ -64,6 +66,16 @@ pub(super) fn enable() {
                 | UXN
                 | 3;
         }
+        (*ram).0[3] = data as u64 | 3;
+        for index in 0..crate::el0_image::DATA_SIZE / 4096 {
+            (*data).0[index] = (crate::el0_image::DATA_BASE + index * 4096) as u64
+                | AF
+                | NORMAL
+                | USER_RW
+                | PXN
+                | UXN
+                | 3;
+        }
         // 39ビット VA・4 KiB粒度・32ビット PA。TTBR1 は使わない。
         // キャッシュは無効のままにし、MMU 無効の EL2 との共有メモリを扱う。
         asm!(
@@ -86,14 +98,25 @@ pub(super) fn enable() {
     }
 }
 
-pub(super) fn reset_stack() {
+pub(super) fn reset_process() {
     // SAFETY: 前のアプリは終了済みで、次のアプリはまだ実行していない。
-    // 単一の専用スタック領域を消去し、次の PID に前の内容を渡さない。
+    // スタックとデータ領域を初期化し、次の PID に前の内容を渡さない。
     unsafe {
         ptr::write_bytes(
             crate::el0_image::STACK_BASE as *mut u8,
             0,
             crate::el0_image::STACK_SIZE,
+        );
+        // .bss と未使用部分をゼロにし、OS の読み取り専用テンプレートから .data を戻す。
+        ptr::write_bytes(
+            crate::el0_image::DATA_BASE as *mut u8,
+            0,
+            crate::el0_image::DATA_SIZE,
+        );
+        ptr::copy_nonoverlapping(
+            crate::el0_image::DATA_INITIAL.as_ptr(),
+            crate::el0_image::DATA_BASE as *mut u8,
+            crate::el0_image::DATA_INITIAL.len(),
         );
     }
 }
