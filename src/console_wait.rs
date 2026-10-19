@@ -1,6 +1,10 @@
 use crate::{UART, hvc};
 use core::arch::asm;
 use core::ptr::{read_volatile, write_volatile};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+// シェルとアプリが同じ端末を順番に読むため、改行の状態も共有する。
+static AFTER_CR: AtomicBool = AtomicBool::new(false);
 
 // QEMU virt 固有: UART0 の割込みは SPI 1（INTID 33）、GICv2 の配置は以下。
 const GICD: usize = 0x0800_0000;
@@ -25,6 +29,21 @@ pub(super) fn configure() {
 }
 
 pub(super) fn read_blocking() -> (u64, u64) {
+    loop {
+        let result = read_raw();
+        if result.0 != hvc::OK {
+            AFTER_CR.store(false, Ordering::Relaxed);
+            return result;
+        }
+        let after_cr = AFTER_CR.swap(result.1 == 13, Ordering::Relaxed);
+        if !after_cr || result.1 != 10 {
+            return result;
+        }
+        // CRLF は1改行。CR の読み手と LF の読み手が別でも、余分な空行を渡さない。
+    }
+}
+
+fn read_raw() -> (u64, u64) {
     // SAFETY: EL2 の HVC ハンドラー内で DAIF.I=1、HCR_EL2.IMO=1 の状態で呼ぶ。
     // UART の FIFO は無効。RXIM（ビット4）を許可すると1バイトでも IRQ が立つ。
     // IRQ 例外には入らず、保留された IRQ で WFI を起こし、この関数内で完了する。

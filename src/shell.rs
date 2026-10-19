@@ -11,7 +11,6 @@ pub(super) fn run() -> Result<(), Error> {
     let mut line = [0u8; LINE_CAPACITY];
     let mut length = 0;
     let mut overflow = false;
-    let mut after_cr = false;
     loop {
         let byte = match hvc::read_byte() {
             // 受信成功。入力された1バイトを、下のキー処理へ渡す。
@@ -20,7 +19,6 @@ pub(super) fn run() -> Result<(), Error> {
             Err(Error::ReceiveFault) => {
                 length = 0;
                 overflow = false;
-                after_cr = false;
                 hvc::write_str("\r\nInput error; line discarded\r\n")?;
                 hvc::write_str(PROMPT)?;
                 continue;
@@ -28,12 +26,7 @@ pub(super) fn run() -> Result<(), Error> {
             // その他の HVC エラー。シェルを継続せず、呼び出し元へエラーを返す。
             Err(error) => return Err(error),
         };
-        // CRLF を1回の Enter として扱う。CR 単独・LF 単独にも対応する。
-        if after_cr && byte == b'\n' {
-            after_cr = false;
-            continue;
-        }
-        after_cr = byte == b'\r';
+        // CRLF の重複除去は、アプリと共有する端末入力処理で行う。
         match byte {
             // Enter（CR または LF）。行を実行し、入力状態を初期化してプロンプトを出す。
             b'\r' | b'\n' => {
@@ -91,7 +84,7 @@ fn execute(line: &str, processes: &mut Manager) -> Result<(), Error> {
     let arguments = arguments.trim_start();
     match command {
         "help" if arguments.is_empty() => hvc::write_str(
-            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run hello, fault, globals, globals-fault\r\nProtection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard, exec-data\r\n",
+            "help       Show commands\r\ninfo       Show system information\r\nps         Show the last process\r\necho TEXT  Print TEXT\r\nrun NAME   Run hello, input, fault, globals, globals-fault\r\nProtection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard, exec-data\r\n",
         ),
         "info" if arguments.is_empty() => hvc::write_str(
             "rustyhv\r\nShell: EL1, console: EL2 via HVC\r\nMemory: EL0 protected, one process at a time\r\nPlatform: QEMU virt, AArch64, 1 CPU\r\n",

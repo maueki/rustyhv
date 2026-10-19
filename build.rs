@@ -8,6 +8,7 @@ fn main() {
         "src/apps/hello.rs",
         "src/apps/fault.rs",
         "src/apps/globals.rs",
+        "src/apps/input.rs",
         "src/svc_abi.rs",
     ] {
         println!("cargo:rerun-if-changed={file}");

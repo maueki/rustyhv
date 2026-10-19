@@ -49,6 +49,10 @@ pub(super) fn find(name: &str) -> Option<App> {
             name: "exec-data",
             selector: 10,
         }),
+        "input" => Some(App {
+            name: "input",
+            selector: 11,
+        }),
         _ => None,
     }
 }

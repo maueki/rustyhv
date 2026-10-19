@@ -133,6 +133,36 @@ def main():
                 b"App exited with status: 0x0000000000000080\r\n" + prompt,
             ])
             check("data/bss reset after fault", b"run globals\r", [globals_output + prompt])
+            input_prompt = b"Input (max 32 ASCII bytes): "
+
+            def start_input(command=b"run input\r\n"):
+                process.stdin.write(command)
+                process.stdin.flush()
+                output = receive(prompts=0, ending=input_prompt)
+                assert output.count(prompt) == 0, output
+
+            start_input()
+            before = cpu_seconds()
+            time.sleep(1)
+            used = cpu_seconds() - before
+            assert used < 0.25, f"App input wait consumed {used:.2f} CPU seconds"
+            print(f"PASS: app input idle CPU {used:.2f} seconds", flush=True)
+            check("EL0 input / CRLF / Backspace", b"helx\x08lo\r\n", [b"Input: hello\r\n" + prompt])
+            check("shell after app input", b"echo input returned\r\n", [b"\r\ninput returned\r\n"])
+            start_input(b"run input\n")
+            check("EL0 input / LF / Delete", b"tesx\x7ft\n", [b"Input: test\r\n" + prompt])
+            start_input(b"run input\r")
+            check("EL0 input / CR", b"\r", [b"Input: \r\n" + prompt])
+            start_input()
+            check("EL0 input at limit", b"x" * 32 + b"\r\n", [b"Input: " + b"x" * 32 + b"\r\n" + prompt])
+            start_input()
+            check("EL0 input overflow", b"x" * 33 + b"\r\n", [
+                b"Input too long; discarded\r\nApp exited with status: 0x0000000000000002\r\n" + prompt,
+            ])
+            start_input()
+            check("EL0 input cancellation", b"cancel\x03", [b"^C\r\nInput cancelled\r\n" + prompt])
+            check("queued input across readers", b"run input\r\nqueued\r\n", [b"Input: queued\r\n" + prompt])
+            check("hello after input", b"run hello\r\n", [app_return])
 
             check("128-byte line", b"echo " + b"x" * 123 + b"\r", [b"\r\n" + b"x" * 123 + b"\r\n"])
             overflow = check("overflow", b"echo " + b"x" * 124 + b"\r", [b"Line too long (max 128 bytes); discarded\r\n"])

@@ -192,6 +192,7 @@ EL1 の通常出力は `hvc::write_str(&str)` / `write_bytes(&[u8])` を使い�
 操作3の引数は0。入力がなければ即座に未入力を返す。
 シェルの `read_byte() -> Result<u8, Error>` は操作4を使い、入力が来るまで EL2 内で待機する。
 操作4の引数も0で、シェル構成でのみ利用可能。
+操作4はシェルとアプリで改行状態を共有し、CR 直後の LF を読み飛ばす。操作3は生のバイトを返す。
 途中でエラーになった場合、それ以前のバイトは出力済み。1バイトごとの HVC なので大量出力向けの最適化は未実装。
 不正な引数256の拒否と、その後の日本語出力も確認する。
 
@@ -229,7 +230,7 @@ help       Show commands
 info       Show system information
 echo TEXT  Print TEXT
 ps         Show the last process
-run NAME   Run hello, fault, globals, globals-fault
+run NAME   Run hello, input, fault, globals, globals-fault
 Protection tests: read-kernel, write-kernel, read-device, write-code, exec-stack, stack-guard, exec-data
 rustyhv> echo hello
 hello
@@ -296,6 +297,21 @@ OS の debug / release にかかわらず、ユーザーイメージは最適化
 アプリの登録は `src/apps/mod.rs`、生成と終了の管理は `src/process.rs` が担当する。
 未登録の名前や余分な引数はシェルが報告する。
 
+`app_api::read_byte()` / `write_byte()` は安全な Rust の1バイト入出力 API。
+SVC にユーザーポインタを渡さず、レジスタの整数だけでやり取りする。
+
+```text
+rustyhv> run input
+Input (max 32 ASCII bytes): hello
+Input: hello
+rustyhv>
+```
+
+`input` はスタック上の32バイトバッファで ASCII 入力を受け取る。
+CR・LF・CRLF で確定し、Backspace / Delete で削除、Ctrl+C で取り消してシェルへ戻る。
+上限を超えた行は破棄し、終了コード2を返す。
+入力待ちは EL2 の `wfi` を使う。ヒープやマルチタスクはまだ使わない。
+
 現在はカーネルと一緒にビルドしたアプリを、専用64 KiBスタックで EL0t へ移して実行する。
 EL1 のシェルの SP と callee-saved レジスタ・DAIF を保存し、終了 SVC で復元してシェルへ戻る。
 出力は EL0 → SVC → EL1 → HVC → EL2 の順で UART に届く。
@@ -307,8 +323,9 @@ SVC ハンドラーは保存された SPSR が EL0t を示すことを検証す�
 |---|---|---|
 | 1 | 出力するバイト（0〜255） | x0 に状態、x1 に0を返して EL0 に復帰 |
 | 2 | 終了コード | アプリを終了し、EL1 のシェルへ復帰 |
+| 3 | 0 | 入力を待ち、x0 に状態、x1 に入力バイトを返す |
 
-出力の状態は0: 成功、1: 未対応操作、2: 不正引数、3: コンソールエラー。
+入出力の状態は0: 成功、1: 未対応操作、2: 不正引数、3: コンソールエラー、4: 受信エラー。
 SVC の即値・番号・状態は今回決めた取り決め。FP/SIMD の保存はまだ含めない。
 EL0 の同期例外は原因を表示してアプリを終了し、シェルに復帰する。
 `run fault` は安全な `app_api::abort()` で BRK を起こす確認用アプリ。アプリ側に直接の `unsafe` は不要。

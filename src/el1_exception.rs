@@ -67,6 +67,20 @@ extern "C" fn el1_exception_handler(vector: u64, frame: *mut crate::ExceptionFra
                     frame.registers[1] = 0; // 通常終了。終了コード128でも例外とは区別する。
                     return crate::el0::exit_address();
                 }
+                crate::svc_abi::READ_BYTE => {
+                    // 引数は0だけを許可。待機しても EL1 の例外フレームは保持される。
+                    let (status, byte) = if frame.registers[1] != 0 {
+                        (2, 0)
+                    } else {
+                        match hvc::read_byte() {
+                            Ok(byte) => (0, u64::from(byte)),
+                            Err(hvc::Error::ReceiveFault) => (4, 0),
+                            Err(_) => (3, 0),
+                        }
+                    };
+                    frame.registers[0] = status;
+                    frame.registers[1] = byte;
+                }
                 _ => {
                     frame.registers[0] = 1; // 未対応の操作。
                     frame.registers[1] = 0;

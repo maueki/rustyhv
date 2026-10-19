@@ -9,6 +9,8 @@ mod fault;
 mod globals;
 #[path = "../src/apps/hello.rs"]
 mod hello;
+#[path = "../src/apps/input.rs"]
+mod input;
 #[path = "../src/svc_abi.rs"]
 mod svc_abi;
 
@@ -86,6 +88,10 @@ extern "C" fn user_entry(selector: u64) -> ! {
                     options(noreturn, nostack));
             }
         }
+        11 => match input::run() {
+            Ok(()) => 0,
+            Err(error) => error.0,
+        },
         _ => 1,
     };
     app_api::exit(status)
